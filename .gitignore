@@ -4,8 +4,6 @@ __pycache__/
 web/.env
 roblox_cookie.txt
 content/
-client-assets/**
-!client-assets/.gitkeep
 assetdelivery/**
 !assetdelivery/meshes/
 !assetdelivery/textures/
