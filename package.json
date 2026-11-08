@@ -1,0 +1,29 @@
+{
+  "name": "replay-mod",
+  "version": "1.0.0",
+  "description": "Roblox scene recorder and desktop/mobile replay viewer",
+  "main": "dist/server.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "build": "tsc && node tools/copy-three.mjs",
+    "start": "node dist/server.js",
+    "test": "node --test server/*.test.cjs && node tests/test-playback.cjs",
+    "format": "prettier --write server/*.ts",
+    "format:check": "prettier --check server/*.ts"
+  },
+  "keywords": [],
+  "author": "JuninSB",
+  "license": "GPL-3.0-only",
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "prettier": "^3.9.10",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "draco3d": "^1.5.9",
+    "three": "^0.161.0"
+  }
+}

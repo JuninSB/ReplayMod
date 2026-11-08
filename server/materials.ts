@@ -1,0 +1,225 @@
+// Material IDs and aliases preserved from the original backend.
+export const materialAssets: Record<string, Record<string, string>> = {
+  asphalt: {
+    color: "9930003046",
+    normal: "9429449876",
+    roughness: "9429450346",
+  },
+  basalt: {
+    color: "9920482056",
+    normal: "9438412214",
+    roughness: "9438412457",
+  },
+  brick: {
+    color: "9920482813",
+    normal: "9438453152",
+    roughness: "9438453413",
+  },
+  cardboard: {
+    color: "14108651729",
+    normal: "14108654002",
+    roughness: "14108654299",
+  },
+  carpet: {
+    color: "14108662587",
+    normal: "14108663154",
+    roughness: "14108663726",
+  },
+  ceramictiles: {
+    color: "17429425079",
+    normal: "17429425915",
+    metalness: "17429426100",
+    roughness: "17429426861",
+  },
+  clayrooftiles: {
+    color: "18147681935",
+    normal: "18147683410",
+    roughness: "18147684855",
+  },
+  cobblestone: {
+    color: "9919718991",
+    normal: "9438457162",
+    roughness: "9438457470",
+  },
+  concrete: {
+    color: "9920484153",
+    normal: "9466554006",
+    roughness: "9466554186",
+  },
+  corrodedmetal: {
+    color: "9920589327",
+    normal: "9439548484",
+    metalness: "9439548749",
+    roughness: "9439556441",
+  },
+  crackedlava: {
+    color: "9920484943",
+    normal: "9438508790",
+    roughness: "9438509046",
+  },
+  diamondplate: {
+    color: "10237720195",
+    normal: "9438583222",
+    metalness: "9438583347",
+    roughness: "9438583558",
+  },
+  fabric: {
+    color: "9920517696",
+    normal: "9873280412",
+    roughness: "9873282563",
+  },
+  foil: {
+    color: "9466552117",
+    normal: "9424786192",
+    metalness: "9424786272",
+    roughness: "9424786620",
+  },
+  glacier: {
+    color: "9920518732",
+    normal: "9438812958",
+    roughness: "9438851286",
+  },
+  glass: {
+    color: "9438868521",
+    normal: "7547304785",
+    roughness: "7547304892",
+  },
+  granite: {
+    color: "9920550238",
+    normal: "9438882935",
+    roughness: "9438883109",
+  },
+  grass: {
+    color: "9920551868",
+    normal: "9438955773",
+    roughness: "9438955997",
+  },
+  ground: {
+    color: "9920554482",
+    normal: "9439043558",
+    roughness: "9439043765",
+  },
+  ice: {
+    color: "9920555943",
+    normal: "9467301039",
+    roughness: "9467301203",
+  },
+  leafygrass: {
+    color: "9920557906",
+    normal: "9439080781",
+    roughness: "9439080950",
+  },
+  leather: {
+    color: "14108670073",
+    normal: "14108670486",
+    roughness: "14108670748",
+  },
+  limestone: {
+    color: "9920561437",
+    normal: "9439415191",
+    roughness: "9439415495",
+  },
+  marble: {
+    color: "9439430596",
+    normal: "9439431240",
+    roughness: "9439431383",
+  },
+  metal: {
+    color: "9920574687",
+    normal: "9873295432",
+    metalness: "9873318201",
+    roughness: "9873318890",
+  },
+  mud: {
+    color: "9920578473",
+    normal: "9439509827",
+    roughness: "9439510012",
+  },
+  pavement: {
+    color: "9920579943",
+    normal: "9439519281",
+    roughness: "9439519532",
+  },
+  pebble: {
+    color: "9920581082",
+    normal: "9439528644",
+    roughness: "9439537267",
+  },
+  plaster: {
+    color: "14108671255",
+    normal: "14108671870",
+    roughness: "14108672378",
+  },
+  rock: {
+    color: "9920587470",
+    normal: "9439538417",
+    roughness: "9439545859",
+  },
+  roofshingles: {
+    color: "119722544879522",
+    normal: "77534750680073",
+    roughness: "129397260312247",
+  },
+  rubber: {
+    color: "14108673018",
+    normal: "14108674698",
+    metalness: "14108674894",
+    roughness: "14108675142",
+  },
+  salt: {
+    color: "9920590225",
+    normal: "9439565809",
+    roughness: "9439566688",
+  },
+  sand: {
+    color: "9920591683",
+    normal: "9439577084",
+    roughness: "9439577327",
+  },
+  sandstone: {
+    color: "9920596120",
+    normal: "9439596530",
+    roughness: "9439596711",
+  },
+  slate: {
+    color: "9920599782",
+    normal: "9439612514",
+    roughness: "9439612733",
+  },
+  snow: {
+    color: "9920620284",
+    normal: "9439632006",
+    roughness: "9439632145",
+  },
+  wood: {
+    color: "9920625290",
+    normal: "9439641376",
+    roughness: "9439648605",
+  },
+  woodplanks: {
+    color: "9920626778",
+    normal: "9439650689",
+    roughness: "9439658127",
+  },
+};
+export const materialAliases: Record<string, string[]> = {
+  metal: ["Metal", "Aluminium"],
+  diamondplate: ["Diamond_Plate"],
+  fabric: ["Fabric_or_Tissue"],
+  corrodedmetal: ["Ferro_Corroido"],
+  ice: ["Gelo"],
+  glass: ["Glass"],
+  grass: ["Grama"],
+  granite: ["Granite"],
+  marble: ["Marble"],
+  pavement: ["Paving_Stone"],
+  pebble: ["Pebble"],
+  plastic: ["Plastic"],
+  smoothplastic: ["Plastic"],
+  wood: ["wood"],
+  woodplanks: ["wood_planks"],
+  concrete: ["Concrete"],
+  brick: ["Brick"],
+  sand: ["areia"],
+  slate: ["Ardosia"],
+};
