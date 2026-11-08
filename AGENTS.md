@@ -2,11 +2,11 @@
 
 ## Project Structure
 
-`roblox/` contains the Luau recorder; `server/` contains the TypeScript API, storage, asset delivery and codecs; `web/static/` and `web/templates/` contain the responsive Three.js viewer. `tests/` contains playback checks, and `server/server.test.cjs` covers server behavior. `docs/` explains operation, API contracts, product behavior and visual conventions. `dist/`, `node_modules/`, `web/static/vendor/three/`, `web/data/` and `content/` are generated or user data and must not be committed.
+`roblox/` contains the Luau recorder; `server/` contains the TypeScript API, storage, asset delivery and codecs; `web/static/` and `web/templates/` contain the responsive Three.js viewer. `tests/` contains playback checks, and `server/server.test.cjs` covers server behavior. `docs/` explains operation, API contracts, product behavior and visual conventions. `dist/`, `node_modules/`, and `web/static/vendor/three/` are generated. `web/data/`, `client-assets/`, and `assetdelivery/` hold local runtime data; commit only the empty placeholders, never captures, Roblox client files, or downloads.
 
 ## Install, Build and Verify
 
-Use Node.js 22+ with npm. Run `npm ci`, `npm run build`, then `npm start` to run locally. Check changes with `npm test`, `node --check web/static/app.js`, and `npm run format:check`. `npm run format` formats the TypeScript server. A browser test does not replace a real executor or mobile device check when those are relevant.
+Use Node.js 22+ with npm. Run `npm ci --no-bin-links`, `npm run build`, then `npm start` to run locally. Dependencies stay in ignored `node_modules/`; never commit them. Check changes with `npm test`, `node --check web/static/app.js`, and `npm run format:check`. `npm run format` formats the TypeScript server. A browser test does not replace a real executor or mobile device check when those are relevant.
 
 ## Code and Documentation
 

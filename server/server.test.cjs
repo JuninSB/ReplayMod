@@ -1,6 +1,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
+const { createHash } = require("node:crypto");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
@@ -191,15 +192,22 @@ test("legacy compact-v1 snapshot preserves parts and paths", () => {
 test("Node server accepts chunked replays and enforces local authentication", async () => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "replaymod-ts-"));
   const contentDir = path.join(dataDir, "content");
+  const clientAssetsDir = path.join(dataDir, "client-assets");
+  const assetDeliveryDir = path.join(dataDir, "assetdelivery");
   const clientContentDir = path.join(dataDir, "roblox-client-content");
-  const materialDir = path.join(contentDir, "material_textures");
+  const materialDir = path.join(clientAssetsDir, "material_textures");
   await fs.mkdir(materialDir, { recursive: true });
+  await fs.mkdir(path.join(contentDir, "textures"), { recursive: true });
   await fs.mkdir(path.join(clientContentDir, "textures"), { recursive: true });
   await fs.writeFile(
     path.join(clientContentDir, "textures", "face.png"),
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
   );
   await fs.writeFile(path.join(dataDir, "outside.png"), "private");
+  await fs.writeFile(
+    path.join(contentDir, "textures", "legacy.png"),
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+  );
   await fs.writeFile(
     path.join(materialDir, "Plastic.png"),
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
@@ -212,6 +220,8 @@ test("Node server accepts chunked replays and enforces local authentication", as
       ...process.env,
       SERVER_WEBVIEW_DATA_DIR: dataDir,
       SERVER_WEBVIEW_CONTENT_DIR: contentDir,
+      SERVER_WEBVIEW_CLIENT_ASSETS_DIR: clientAssetsDir,
+      SERVER_WEBVIEW_ASSET_DELIVERY_DIR: assetDeliveryDir,
       SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR: clientContentDir,
       SERVER_WEBVIEW_PORT: String(port),
       SERVER_WEBVIEW_PUBLIC_BASE_URL: base,
@@ -243,6 +253,23 @@ test("Node server accepts chunked replays and enforces local authentication", as
     );
     assert.equal(clientContent.status, 200);
     assert.equal(clientContent.headers.get("content-type"), "image/png");
+    const legacyContent = await fetch(
+      base + "/api/asset/texture?src=" + encodeURIComponent("rbxasset://textures/legacy.png"),
+    );
+    assert.equal(legacyContent.status, 200);
+    const cachedTexture = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 42]);
+    const cachedTextureKey = createHash("sha256")
+      .update("asset-v1:rbxassetid://123")
+      .digest("hex");
+    const textureCacheDir = path.join(assetDeliveryDir, "textures");
+    await fs.mkdir(textureCacheDir, { recursive: true });
+    await fs.writeFile(path.join(textureCacheDir, cachedTextureKey), cachedTexture);
+    await fs.writeFile(path.join(textureCacheDir, cachedTextureKey + ".type"), "image/png");
+    const cachedResponse = await fetch(
+      base + "/api/asset/texture?src=" + encodeURIComponent("rbxassetid://123"),
+    );
+    assert.equal(cachedResponse.status, 200);
+    assert.deepEqual(Buffer.from(await cachedResponse.arrayBuffer()), cachedTexture);
     const traversal = await fetch(
       base + "/api/asset/texture?src=" + encodeURIComponent("rbxasset://../outside.png"),
     );

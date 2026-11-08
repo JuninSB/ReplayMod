@@ -10,7 +10,9 @@ Copy `web/.env.example` to `web/.env` and edit only the settings you need. The N
 | `SERVER_WEBVIEW_PORT` | `8000` | HTTP port. |
 | `SERVER_WEBVIEW_PUBLIC_BASE_URL` | `http://127.0.0.1:8000` | Address embedded in `/recorder.lua`; use the same reachable address from the executor. |
 | `SERVER_WEBVIEW_DATA_DIR` | `web/data` | Directory for replay, snapshot and thumbnail data. |
-| `SERVER_WEBVIEW_CONTENT_DIR` | `content` | User-owned Roblox assets and generated asset cache. |
+| `SERVER_WEBVIEW_CLIENT_ASSETS_DIR` | `client-assets` | Private local `rbxasset://` files, including default material maps. |
+| `SERVER_WEBVIEW_ASSET_DELIVERY_DIR` | `assetdelivery` | Download cache split into `meshes/`, `textures/`, `audio/`, and `other/`. |
+| `SERVER_WEBVIEW_CONTENT_DIR` | deprecated | Compatibility alias for the old combined `content/` directory. New installs should use the two settings above. |
 | `SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR` | unset | Optional accessible Roblox client `content/` folder for local `rbxasset://` files. No client files are downloaded. |
 | `SERVER_WEBVIEW_ROBLOX_API_KEY` | unset | Optional Roblox Open Cloud key for assets permitted to the associated account. |
 | `SERVER_WEBVIEW_ROBLOX_SECURITY_FILE` | unset | Optional path to a private file containing the `.ROBLOSECURITY` value for assets that require your account session. |
@@ -22,9 +24,9 @@ If an asset requires an account session, prefer leaving the optional credential 
 
 ## Runtime data and cache
 
-The server creates `web/data/` and `content/cache/node/` as needed. Both are local data, ignored by Git, and intentionally absent from this source repository. `SERVER_WEBVIEW_CONTENT_DIR` lets you keep the asset cache outside the checkout. `SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR` can point to an accessible installed client content folder; the server does not fetch or package those files. Do not share account-restricted assets or cookies with other users.
+The server creates `web/data/` and the typed Asset Delivery cache folders as needed. Local client assets and downloaded files are ignored by Git; the repository contains empty placeholders only. `tools/migrate-assets.mjs` moves an older `content/` tree into `client-assets/` and moves its `cache/node/` entries into the matching `assetdelivery/` buckets. Preview with `node tools/migrate-assets.mjs --dry-run`, then run it without that flag; pass another project directory as the first argument to migrate a separate installation. `tools/clear-assetdelivery-cache.sh` clears downloaded entries under `assetdelivery/` and the old `content/cache/node/` path, while preserving the core client files and empty folder markers. It asks for confirmation; use `--dry-run` to preview or `--yes` for automation. `SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR` can still point to an accessible installed client folder. The server does not fetch or package client files. Do not share account-restricted assets or cookies with other users.
 
-Back up `web/data/` if you want to preserve captures. Asset cache files can be downloaded again, subject to Roblox availability and permissions. The project does not bundle Roblox client files or downloaded assets.
+Back up `web/data/` if you want to preserve captures. Asset Delivery cache files can be downloaded again, subject to Roblox availability and permissions. Keep any private client-asset backup outside the repository; the project does not bundle Roblox client files or downloaded assets.
 
 ## Troubleshooting
 

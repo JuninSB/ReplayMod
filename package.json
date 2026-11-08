@@ -8,11 +8,11 @@
     "test": "tests"
   },
   "scripts": {
-    "build": "tsc && node tools/copy-three.mjs",
+    "build": "node tools/build.mjs",
     "start": "node dist/server.js",
     "test": "node --test server/*.test.cjs && node tests/test-playback.cjs",
-    "format": "prettier --write server/*.ts",
-    "format:check": "prettier --check server/*.ts"
+    "format": "node node_modules/prettier/bin/prettier.cjs --write 'server/*.ts'",
+    "format:check": "node node_modules/prettier/bin/prettier.cjs --check 'server/*.ts'"
   },
   "keywords": [],
   "author": "JuninSB",

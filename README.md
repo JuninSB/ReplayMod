@@ -13,7 +13,7 @@ Replay Mod records Roblox scenes into snapshots and delta-based replays, then pl
 Clone the repository, then run from its root:
 
 ```sh
-npm ci
+npm ci --no-bin-links
 npm run build
 npm start
 ```
@@ -24,13 +24,15 @@ Open <http://127.0.0.1:8000> in the browser. In the executor on the same device,
 loadstring(game:HttpGet("http://127.0.0.1:8000/recorder.lua"))()
 ```
 
-Keep the server running while recording or viewing replays. `./start.sh` (Unix/Termux) and `start.bat` (Windows) install dependencies when needed, build, and start the server.
+Keep the server running while recording or viewing replays. `./start.sh` (Unix/Termux) and `start.bat` (Windows) install dependencies when needed, build, and start the server. `node_modules/` is generated locally and stays out of Git. The build script handles Android shared storage, where npm cannot create executable symlinks in `.bin/`.
 
 ## Configuration and local data
 
 The server binds to `127.0.0.1` by default. That keeps it local to the device. For a trusted LAN setup, set `SERVER_WEBVIEW_HOST=0.0.0.0` and `SERVER_WEBVIEW_PUBLIC_BASE_URL` to the device's reachable address. Read [configuration and security](docs/operacao.md) before exposing it to other devices.
 
-Replays and snapshots are created under `web/data/`. Roblox asset downloads are cached under `content/cache/node/`; both directories are local runtime data and ignored by Git. The repository intentionally contains no Roblox client cache or downloaded Roblox assets. Users create their own cache as they use the application. Asset credentials are optional and must remain on the server; see the configuration guide.
+Same-device uploads authenticate automatically; no token setup is needed. For a phone executor connecting to a computer over Wi-Fi, the server prints a temporary login code; see [setup and configuration](docs/setup.md#capture-login-and-upload-token).
+
+Replays and snapshots are created under `web/data/`. Locally supplied Roblox client files go in `client-assets/`; Asset Delivery fetches supported `rbxassetid://` references and caches them under `assetdelivery/meshes/` and `assetdelivery/textures/`. Configure your `.ROBLOSECURITY` cookie in a private server-side file to request supported public assets with your Roblox session. The cookie cannot restore deleted assets or access private assets the account is not permitted to use. Built-in `rbxasset://` files need optional client content under `client-assets/`. These asset folders are ignored except for empty placeholders, so Roblox files and downloads are not shipped in the repository. These files are important for built-in textures; follow the [client assets tutorial](docs/setup.md#add-local-roblox-content-files) to provide them.
 
 ## Develop and verify
 

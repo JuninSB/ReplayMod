@@ -13,9 +13,9 @@
 
 ## Storage boundaries
 
-`SERVER_WEBVIEW_DATA_DIR` holds user replay and snapshot data. `SERVER_WEBVIEW_CONTENT_DIR` holds user-provided content and the on-demand download cache at `cache/node/`. Neither directory is shipped. The default paths are `web/data/` and `content/`, and both are ignored by Git.
+`SERVER_WEBVIEW_DATA_DIR` holds replay and snapshot data. Locally supplied `rbxasset://` files are read from `client-assets/`; `SERVER_WEBVIEW_CLIENT_ASSETS_DIR` can point to a private copy elsewhere. Asset Delivery responses are cached separately in `assetdelivery/meshes/` and `assetdelivery/textures/`, with `audio/` and `other/` reserved for later asset kinds. `SERVER_WEBVIEW_ASSET_DELIVERY_DIR` changes that root. The repository tracks only empty directory markers; real client files and cached downloads stay local and ignored by Git. `SERVER_WEBVIEW_CONTENT_DIR` remains a deprecated compatibility alias for older installations.
 
-`SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR` optionally points to an accessible Roblox client `content/` folder for `rbxasset://` references. Replay Mod does not download or package the Roblox Player. The Asset Delivery proxy resolves `rbxassetid://` references separately and caches permitted responses under the configured content directory. Read [asset delivery](asset-delivery.md) for formats and access boundaries.
+`SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR` optionally points to another accessible Roblox client `content/` folder for `rbxasset://` references. Replay Mod does not download or package the Roblox Player. Material maps resolve only from local client assets; unique `rbxassetid://` references use the Asset Delivery proxy and the separate typed cache. Read [asset delivery](asset-delivery.md) for formats and access boundaries.
 
 Do not commit downloaded Roblox assets, replay captures, credentials, build outputs, or `node_modules`. No Roblox physics simulation is attempted; playback reconstructs recorded state. Executor behavior and Roblox-side capture performance require an in-game test.
 

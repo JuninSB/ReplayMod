@@ -17,7 +17,7 @@ Default base URL: `http://127.0.0.1:8000`. Error responses use `{ "error": "mess
 | `GET /api/servers`, `GET /api/snapshot/latest` | Legacy snapshot reads | Optional `serverId` | List or snapshot payload |
 | `GET /api/snapshot/chunk` | Read stored snapshot chunk | Snapshot identifiers | Chunk data |
 | `GET /api/asset/texture`, `GET /api/asset/mesh` | Roblox content proxy | `src` | Asset bytes or an error |
-| `GET /api/material/map` | Material texture proxy | `material`, `type` | Image bytes or an error |
+| `GET /api/material/map` | Local built-in material map | `material`, `type` (`color`, `normal`, `metalness`, `roughness`) | Image bytes from `client-assets/material_textures/`, or 404 when absent; this route does not call Asset Delivery |
 
 The mesh proxy converts FileMesh versions 1.00, 1.01, 2.00, 3.00, 3.01, 4.00, 4.01, 5.00, and 7.00 (Draco) to OBJ. For versions 3–5 and 7, it returns the first LOD when one is indicated. Assets without permission and unsupported formats return an error; texture delivery is a separate request.
 

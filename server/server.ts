@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { randomBytes, randomInt, createHash } from "node:crypto";
 import { decodeLz4, meshToObjAsync } from "./codec";
-import { materialAssets, materialAliases } from "./materials";
+import { materialAliases } from "./materials";
 import { expandCompactSnapshot } from "./compact";
 import { readLimitedAssetBody } from "./asset-body";
 import { readRobloxSecurity } from "./asset-auth";
@@ -81,9 +81,41 @@ const mime: Record<string, string> = {
   ".glb": "model/gltf-binary",
   ".dds": "image/vnd-ms.dds",
 };
-const contentDir =
-  process.env.SERVER_WEBVIEW_CONTENT_DIR || path.join(root, "content");
-const assetCache = path.join(contentDir, "cache", "node");
+const legacyContentDir = path.resolve(
+  process.env.SERVER_WEBVIEW_CONTENT_DIR || path.join(root, "content"),
+);
+const clientAssetsDir = path.resolve(
+  process.env.SERVER_WEBVIEW_CLIENT_ASSETS_DIR ||
+    process.env.SERVER_WEBVIEW_CONTENT_DIR ||
+    path.join(root, "client-assets"),
+);
+const assetDeliveryDir = path.resolve(
+  process.env.SERVER_WEBVIEW_ASSET_DELIVERY_DIR ||
+    path.join(root, "assetdelivery"),
+);
+const legacyContentDirs = [
+  ...new Set([path.resolve(root, "content"), legacyContentDir]),
+];
+const externalClientContentDir = process.env
+  .SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR
+  ? path.resolve(process.env.SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR)
+  : "";
+function clientContentRoots(): string[] {
+  return [
+    ...new Set([
+      clientAssetsDir,
+      ...legacyContentDirs,
+      ...(externalClientContentDir ? [externalClientContentDir] : []),
+    ]),
+  ];
+}
+function assetCacheDirs(kind: "mesh" | "texture"): string[] {
+  const bucket = kind === "mesh" ? "meshes" : "textures";
+  return [
+    path.join(assetDeliveryDir, bucket),
+    ...legacyContentDirs.map((dir) => path.join(dir, "cache", "node")),
+  ];
+}
 const robloxCookieFile =
   process.env.SERVER_WEBVIEW_ROBLOX_SECURITY_FILE ||
   path.join(root, "roblox_cookie.txt");
@@ -452,13 +484,7 @@ async function fetchAsset(
 async function localAsset(src: string): Promise<string | null> {
   if (!src.startsWith("rbxasset://")) return null;
   const relative = src.slice("rbxasset://".length).replace(/\\/g, "/");
-  const roots = [
-    path.resolve(root, "content"),
-    process.env.SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR
-      ? path.resolve(process.env.SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR)
-      : "",
-  ].filter(Boolean);
-  for (const contentRoot of roots) {
+  for (const contentRoot of clientContentRoots()) {
     const resolved = path.resolve(contentRoot, relative);
     if (!resolved.startsWith(contentRoot + path.sep)) continue;
     try {
@@ -505,13 +531,16 @@ async function asset(
   const key = createHash("sha256")
     .update(`${cacheVersion}:${src}`)
     .digest("hex");
-  const file = path.join(assetCache, key);
-  try {
-    const cached = await fs.readFile(file);
-    const type = (await fs.readFile(file + ".type", "utf8")).trim();
-    return binary(res, cached, type, 600);
-  } catch {
-    /* cache miss */
+  const cacheDirs = assetCacheDirs(kind);
+  for (const cacheDir of cacheDirs) {
+    const file = path.join(cacheDir, key);
+    try {
+      const cached = await fs.readFile(file);
+      const type = (await fs.readFile(file + ".type", "utf8")).trim();
+      return binary(res, cached, type, 600);
+    } catch {
+      /* try the next cache location */
+    }
   }
   const targets = allowedUrl(src)
     ? [src]
@@ -566,7 +595,9 @@ async function asset(
       )
         type = "model/obj";
     }
-    await fs.mkdir(assetCache, { recursive: true });
+    const cacheDir = cacheDirs[0];
+    const file = path.join(cacheDir, key);
+    await fs.mkdir(cacheDir, { recursive: true });
     await Promise.all([
       fs.writeFile(file, body),
       fs.writeFile(file + ".type", type),
@@ -665,7 +696,6 @@ async function handle(
       !["color", "normal", "metalness", "roughness"].includes(map)
     )
       return fail(res, "invalid material or map type");
-    const dir = path.join(contentDir, "material_textures");
     const aliases = [material, ...(materialAliases[material] || [])].map(
       (name) => name.toLowerCase().replace(/[^a-z0-9]/g, ""),
     );
@@ -675,35 +705,35 @@ async function handle(
         : map === "metalness"
           ? ["metalness", "metallic"]
           : [map];
-    let names: string[] = [];
-    try {
-      names = await fs.readdir(dir);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    for (const contentRoot of clientContentRoots()) {
+      const dir = path.join(contentRoot, "material_textures");
+      let names: string[] = [];
+      try {
+        names = await fs.readdir(dir);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      const found = names.find((name) => {
+        const stem = path
+          .parse(name)
+          .name.toLowerCase()
+          .replace(/[^a-z0-9]/g, "");
+        const alias = aliases.find((value) => stem.startsWith(value));
+        if (!alias) return false;
+        const suffix = stem.slice(alias.length);
+        return map === "color"
+          ? !/(normal|rough|metal)/.test(suffix)
+          : tags.some((tag) => suffix.includes(tag));
+      });
+      if (found)
+        return binary(
+          res,
+          await fs.readFile(path.join(dir, found)),
+          mime[path.extname(found).toLowerCase()] || "image/png",
+          1800,
+        );
     }
-    const found = names.find((name) => {
-      const stem = path
-        .parse(name)
-        .name.toLowerCase()
-        .replace(/[^a-z0-9]/g, "");
-      const alias = aliases.find((value) => stem.startsWith(value));
-      if (!alias) return false;
-      const suffix = stem.slice(alias.length);
-      return map === "color"
-        ? !/(normal|rough|metal)/.test(suffix)
-        : tags.some((tag) => suffix.includes(tag));
-    });
-    if (found)
-      return binary(
-        res,
-        await fs.readFile(path.join(dir, found)),
-        mime[path.extname(found).toLowerCase()] || "image/png",
-        1800,
-      );
-    const id = materialAssets[material]?.[map];
-    return id
-      ? asset(res, `rbxassetid://${id}`, "texture")
-      : fail(res, "map unavailable for material", 404);
+    return fail(res, "local client material map unavailable", 404);
   }
   if (method === "POST" && p === "/api/auth/local") {
     if (!loopback(req)) return fail(res, "localhost only", 403);

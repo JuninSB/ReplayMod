@@ -33,4 +33,4 @@ Before opening a pull request, describe the user-visible behavior, list checks r
 
 ## Data and security boundaries
 
-`SERVER_WEBVIEW_DATA_DIR` stores captures. `SERVER_WEBVIEW_CONTENT_DIR` stores user content and on-demand asset cache. Neither is distributed. Do not commit downloaded Roblox assets, replay data, credentials, `.env`, build outputs, or `node_modules`. Keep the local listener on loopback unless LAN access is needed, and never expose this unauthenticated replay library to the public internet.
+`SERVER_WEBVIEW_DATA_DIR` stores captures. `client-assets/` stores local Roblox client files, while `assetdelivery/` stores downloads by type. `SERVER_WEBVIEW_CLIENT_ASSETS_DIR` and `SERVER_WEBVIEW_ASSET_DELIVERY_DIR` can relocate these directories. Do not commit downloaded Roblox assets, replay data, credentials, `.env`, build outputs, or `node_modules`. Keep the local listener on loopback unless LAN access is needed, and never expose this unauthenticated replay library to the public internet.
