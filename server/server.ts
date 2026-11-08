@@ -33,6 +33,20 @@ try {
 const publicBase = (
   process.env.SERVER_WEBVIEW_PUBLIC_BASE_URL || "http://127.0.0.1:8000"
 ).replace(/\/$/, "");
+function isLoopbackBase(value: string): boolean {
+  try {
+    const hostname = new URL(value).hostname
+      .toLowerCase()
+      .replace(/^\[|\]$/g, "");
+    return (
+      hostname === "localhost" ||
+      hostname === "::1" ||
+      /^127(?:\.\d{1,3}){3}$/.test(hostname)
+    );
+  } catch {
+    return false;
+  }
+}
 const host = process.env.SERVER_WEBVIEW_HOST || "127.0.0.1";
 const port = Number(process.env.SERVER_WEBVIEW_PORT || 8000);
 const maxBody = Number(
@@ -435,13 +449,29 @@ async function fetchAsset(
   }
   return null;
 }
-function localAsset(src: string): string | null {
+async function localAsset(src: string): Promise<string | null> {
   if (!src.startsWith("rbxasset://")) return null;
   const relative = src.slice("rbxasset://".length).replace(/\\/g, "/");
-  const resolved = path.resolve(root, "content", relative);
-  return resolved.startsWith(path.resolve(root, "content") + path.sep)
-    ? resolved
-    : null;
+  const roots = [
+    path.resolve(root, "content"),
+    process.env.SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR
+      ? path.resolve(process.env.SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR)
+      : "",
+  ].filter(Boolean);
+  for (const contentRoot of roots) {
+    const resolved = path.resolve(contentRoot, relative);
+    if (!resolved.startsWith(contentRoot + path.sep)) continue;
+    try {
+      const [realRoot, realPath] = await Promise.all([
+        fs.realpath(contentRoot),
+        fs.realpath(resolved),
+      ]);
+      if (realPath.startsWith(realRoot + path.sep)) return realPath;
+    } catch {
+      // Keep looking in the other configured content roots.
+    }
+  }
+  return null;
 }
 async function asset(
   res: ServerResponse,
@@ -449,7 +479,7 @@ async function asset(
   kind: "mesh" | "texture",
 ): Promise<void> {
   if (!src) return fail(res, "src is required");
-  const local = localAsset(src);
+  const local = await localAsset(src);
   if (local) {
     try {
       let body: Buffer = await fs.readFile(local);
@@ -734,6 +764,12 @@ async function handle(
       return fail(res, "cross-site request blocked", 403);
     return chunk(req, res, Object.fromEntries(url.searchParams), "rep");
   }
+  if (method === "GET" && p === "/api/snapshot/local-chunk") {
+    if (!loopback(req)) return fail(res, "localhost only", 403);
+    if (req.headers["sec-fetch-site"] === "cross-site")
+      return fail(res, "cross-site request blocked", 403);
+    return chunk(req, res, Object.fromEntries(url.searchParams), "snap");
+  }
   if (method === "GET" && p === "/api/replays") {
     const rows = await Promise.all(
       [...replays.values()]
@@ -896,7 +932,7 @@ export async function start(): Promise<http.Server> {
   console.log(
     `[Replay Mod] Loadstring: loadstring(game:HttpGet("${publicBase}/recorder.lua"))()`,
   );
-  if (!publicBase.includes("127.0.0.1")) {
+  if (!isLoopbackBase(publicBase)) {
     const code = Array.from({ length: 20 }, () => randomInt(0, 10)).join("");
     loginCodes.set(code, { expires: Date.now() + 30 * 60 * 1000, used: false });
     console.log(`[Replay Mod] LOGIN CODE: ${code} (expires in 1799s)`);
@@ -907,7 +943,7 @@ if (require.main === module)
   start().catch((error) => {
     if ((error as NodeJS.ErrnoException).code === "EADDRINUSE")
       console.error(
-        `[Replay Mod] Porta ${port} já está em uso em ${host}. Se /health responder, use o servidor existente.`,
+        `[Replay Mod] Port ${port} is already in use on ${host}. If /health responds, use the existing server.`,
       );
     else console.error(error);
     process.exitCode = 1;

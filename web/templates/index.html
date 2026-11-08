@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -26,7 +26,7 @@
       <div class="brand">
         REPLAY<span class="brand-accent">MOD</span><small>STUDIO</small>
       </div>
-      <div id="viewerContext" class="viewer-context">Biblioteca</div>
+      <div id="viewerContext" class="viewer-context">Library</div>
       <button
         id="sidebarToggleBtn"
         class="refresh-btn sidebar-toggle-btn"
@@ -43,22 +43,22 @@
         aria-expanded="false"
         aria-controls="toolbarExtras"
       >
-        Ferramentas
+        Tools
       </button>
       <label class="server-select-wrap" for="serverSelect">
-        <span>Sessão</span>
+        <span>Session</span>
         <select id="serverSelect"></select>
       </label>
       <label class="server-select-wrap" for="modeSelect">
-        <span>Biblioteca</span>
-        <select id="modeSelect" aria-label="Escolher entre snapshots e replays">
+        <span>Library</span>
+        <select id="modeSelect" aria-label="Choose snapshots or replays">
           <option value="snap">Snapshots</option>
           <option value="rep">Replays</option>
         </select>
       </label>
-      <button id="homeBtn" class="refresh-btn" type="button">Biblioteca</button>
+      <button id="homeBtn" class="refresh-btn" type="button">Library</button>
       <button id="refreshBtn" class="refresh-btn" type="button">
-        Atualizar
+        Refresh
       </button>
       <div id="toolbarExtras" class="toolbar-extras">
         <div class="debug-wrap">
@@ -68,50 +68,50 @@
             type="button"
             aria-expanded="false"
           >
-            Renderização
+            Rendering
           </button>
           <div id="debugMenu" class="debug-menu" hidden>
             <label class="debug-item"
-              ><input id="dbgShaders" type="checkbox" checked /> Ativar
+              ><input id="dbgShaders" type="checkbox" checked /> Enable
               shaders</label
             >
             <label class="debug-item"
-              ><input id="dbgSmoothShadows" type="checkbox" checked /> Sombras
-              suaves</label
+              ><input id="dbgSmoothShadows" type="checkbox" checked /> Soft
+              shadows</label
             >
             <label class="debug-item"
-              ><input id="dbgFps" type="checkbox" /> Mostrar FPS</label
+              ><input id="dbgFps" type="checkbox" /> Show FPS</label
             >
             <label class="debug-item"
-              ><input id="dbgTextures" type="checkbox" checked /> Ativar
-              texturas</label
+              ><input id="dbgTextures" type="checkbox" checked /> Enable
+              textures</label
             >
             <label class="debug-item"
-              ><input id="dbgFog" type="checkbox" checked /> Neblina</label
+              ><input id="dbgFog" type="checkbox" checked /> Fog</label
             >
             <label class="debug-item"
-              ><input id="dbgCulling" type="checkbox" checked /> Oclusão de
-              objetos</label
+              ><input id="dbgCulling" type="checkbox" checked /> Object
+              occlusion</label
             >
             <label class="debug-item"
-              ><input id="dbgPlayerLabels" type="checkbox" checked /> Nomes dos
-              jogadores</label
+              ><input id="dbgPlayerLabels" type="checkbox" checked /> Player
+              names</label
             >
             <label class="debug-item"
-              ><input id="dbgMeshBoxes" type="checkbox" checked /> Carregar
+              ><input id="dbgMeshBoxes" type="checkbox" checked /> Load
               meshes</label
             >
             <label class="debug-item"
-              ><input id="dbgTexPathLabels" type="checkbox" /> Caminhos das
-              texturas</label
+              ><input id="dbgTexPathLabels" type="checkbox" /> Texture
+              paths</label
             >
             <label class="debug-item"
               ><input id="dbgFxPlaceholders" type="checkbox" checked />
-              Representação de efeitos</label
+              Approximate post effects</label
             >
             <label class="debug-item"
-              ><input id="dbgControls" type="checkbox" checked /> Mostrar
-              ajuda</label
+              ><input id="dbgControls" type="checkbox" checked /> Show
+              controls help</label
             >
             <label class="debug-item"
               ><input id="dbgWireframe" type="checkbox" /> Modo wireframe</label
@@ -125,7 +125,7 @@
             type="button"
             aria-expanded="false"
           >
-            Câmera
+            Camera
           </button>
           <div id="settingsMenu" class="debug-menu settings-menu" hidden>
             <label class="debug-item debug-range">
@@ -141,7 +141,7 @@
               <span id="setFovValue">55</span>
             </label>
             <label class="debug-item debug-range">
-              <span>Sensibilidade</span>
+              <span>Sensitivity</span>
               <input
                 id="setCamSens"
                 type="range"
@@ -153,15 +153,15 @@
               <span id="setCamSensValue">1.00x</span>
             </label>
             <button id="setLookBtn" class="refresh-btn" type="button">
-              Olhar: botão direito
+              Look: right mouse button
             </button>
           </div>
         </div>
         <button id="shareBtn" class="refresh-btn" type="button">
-          Compartilhar
+          Share
         </button>
         <button id="fullscreenBtn" class="refresh-btn" type="button">
-          Tela cheia
+          Fullscreen
         </button>
       </div>
     </header>
@@ -169,15 +169,15 @@
     <div id="appStatus" role="status" class="app-status"></div>
     <section id="landingView" class="landing-view">
       <div class="landing-head">
-        <span class="eyebrow">GRAVE · EXPLORE · REPRODUZA</span>
-        <h1 id="landingTitle">Sua biblioteca de cenas</h1>
+        <span class="eyebrow">RECORD · EXPLORE · REPLAY</span>
+        <h1 id="landingTitle">Your scene library</h1>
         <p id="landingSub">
-          Escolha uma captura para explorar a cena ou reproduzir uma gravação.
+          Choose a snapshot to explore a scene or a replay to watch a recording.
         </p>
         <nav
           id="libraryTabs"
           class="library-tabs"
-          aria-label="Tipo de conteúdo"
+          aria-label="Content type"
         >
           <button type="button" data-library-mode="rep" aria-pressed="true">
             Replays
@@ -196,55 +196,55 @@
           <div
             class="touch-controls"
             role="group"
-            aria-label="Movimentação da câmera"
+            aria-label="Camera movement"
           >
-            <button type="button" data-move="KeyW" aria-label="Avançar">
+            <button type="button" data-move="KeyW" aria-label="Forward">
               ↑
             </button>
-            <button type="button" data-move="KeyA" aria-label="Esquerda">
+            <button type="button" data-move="KeyA" aria-label="Left">
               ←
             </button>
-            <button type="button" data-move="KeyS" aria-label="Recuar">
+            <button type="button" data-move="KeyS" aria-label="Back">
               ↓
             </button>
-            <button type="button" data-move="KeyD" aria-label="Direita">
+            <button type="button" data-move="KeyD" aria-label="Right">
               →
             </button>
-            <button type="button" data-move="KeyE" aria-label="Subir">
+            <button type="button" data-move="KeyE" aria-label="Up">
               ＋
             </button>
-            <button type="button" data-move="KeyQ" aria-label="Descer">
+            <button type="button" data-move="KeyQ" aria-label="Down">
               −
             </button>
           </div>
         </div>
         <div class="camera-help">
           <span class="desktop-help"
-            >Mouse: segure o botão de olhar + WASD para mover.</span
+            >Mouse: hold the look button + WASD to move.</span
           >
           <span class="mobile-help"
-            >Arraste a cena para olhar; use as setas para mover.</span
+            >Drag the scene to look around; use the arrows to move.</span
           >
         </div>
         <div id="replayBar" class="replay-bar" style="display: none">
           <button id="replayPlayBtn" class="refresh-btn" type="button">
-            Reproduzir
+            Play
           </button>
-          <button id="replayCamera" type="button" aria-pressed="false">
-            Câmera livre
+            <button id="replayCamera" type="button" aria-pressed="false">
+            Free camera
           </button>
-          <button id="replayBack" type="button" aria-label="Voltar 5 segundos">
+          <button id="replayBack" type="button" aria-label="Back 5 seconds">
             −5s
           </button>
           <button
             id="replayForward"
             type="button"
-            aria-label="Avançar 5 segundos"
+            aria-label="Forward 5 seconds"
           >
             +5s
           </button>
           <input
-            aria-label="Posição do replay"
+            aria-label="Replay position"
             id="replaySeek"
             type="range"
             min="0"
@@ -253,7 +253,7 @@
             value="0"
           />
           <label class="speed-label"
-            >Velocidade do player<select id="replaySpeed">
+            >Playback speed<select id="replaySpeed">
               <option value="0.25">0.25×</option>
               <option value="0.5">0.5×</option>
               <option value="1" selected>1×</option>
@@ -268,7 +268,7 @@
       <aside
         id="viewerSidebar"
         class="panel viewer-sidebar"
-        aria-label="Explorer e detalhes da gravação"
+        aria-label="Replay explorer and details"
         inert
       >
         <div class="sidebar-header">
@@ -277,12 +277,12 @@
             id="sidebarCloseBtn"
             type="button"
             class="sidebar-close-btn"
-            aria-label="Fechar sidebar"
+            aria-label="Close sidebar"
           >
             ×
           </button>
         </div>
-        <nav class="sidebar-nav" aria-label="Seções do painel">
+        <nav class="sidebar-nav" aria-label="Panel sections">
           <button
             type="button"
             data-sidebar-view="explorer"
@@ -295,29 +295,29 @@
             data-sidebar-view="details"
             aria-pressed="false"
           >
-            Detalhes
+            Details
           </button>
         </nav>
         <section id="sidebarExplorerPane" class="sidebar-pane">
           <label class="sr-only" for="explorerSearch"
-            >Buscar objetos gravados</label
+            >Search recorded objects</label
           >
           <input
             id="explorerSearch"
             class="text-input"
             type="search"
-            placeholder="Buscar nome, classe ou caminho…"
+            placeholder="Search by name, class, or path…"
           />
           <div id="explorerMeta" class="meta" role="status">
-            Nenhuma cena carregada.
+            No scene loaded.
           </div>
           <div id="explorerTree" class="explorer-tree"></div>
-          <h3>Propriedades</h3>
-          <pre id="inspectorData" class="json-box">Selecione um objeto.</pre>
+          <h3>Properties</h3>
+          <pre id="inspectorData" class="json-box">Select an object.</pre>
         </section>
         <section id="sidebarDetailsPane" class="sidebar-pane" hidden>
           <div id="snapshotMeta" class="meta" role="status">
-            Selecione uma gravação.
+            Select a replay or snapshot.
           </div>
           <button id="downloadSnapshotBtn" class="download-btn" type="button">
             Exportar JSON
@@ -328,22 +328,21 @@
             type="button"
             disabled
           >
-            Salvar miniatura da cena
+            Save scene thumbnail
           </button>
           <div class="bug-report">
             <div class="bug-report-text">
-              Diagnóstico da sessão para investigar falhas de captura e
-              renderização.
+              Session diagnostics for investigating capture and rendering issues.
             </div>
             <button id="downloadLogsBtn" class="download-btn" type="button">
-              Exportar diagnóstico
+              Export diagnostics
             </button>
           </div>
-          <h3>Iluminação</h3>
+          <h3>Lighting</h3>
           <pre id="lightingData" class="json-box">{}</pre>
-          <h3>Texturas</h3>
+          <h3>Textures</h3>
           <div id="decalsData" class="decals-list"></div>
-          <h3 id="replayChatTitle" style="display: none">Chat gravado</h3>
+          <h3 id="replayChatTitle" style="display: none">Recorded chat</h3>
           <div id="replayChat" class="replay-chat" style="display: none"></div>
         </section>
       </aside>

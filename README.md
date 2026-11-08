@@ -43,6 +43,10 @@ npm run format:check
 
 See [contributor guide](AGENTS.md), [development notes](docs/arquitetura.md), [operations and configuration](docs/operacao.md), and the [HTTP API](docs/api.md). Tests do not replace testing with the intended executor or checking the viewer on a physical mobile device.
 
+The public [developer documentation site](https://juninsb.github.io/ReplayMod/) includes setup instructions and a practical guide to Roblox Asset Delivery for images, meshes, accessories, and audio.
+
+If you use an AI coding agent, this repository includes project instructions in [`AGENTS.md`](AGENTS.md) and the adapted [`develop-web skill`](.agents/skills/desenvolver-web/SKILL.md). Ask the agent to read both before editing; the skill package preserves its original reference material, scripts, and templates.
+
 ## License
 
 This project is distributed under GNU GPL version 3 only; see [LICENSE](LICENSE). Notices for the original MIT-licensed Webview source and bundled dependencies are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Roblox assets are not included and remain subject to their own terms.

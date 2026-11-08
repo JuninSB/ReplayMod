@@ -9,7 +9,7 @@ const { readLimitedAssetBody } = require("../dist/asset-body.js");
 const { readRobloxSecurity } = require("../dist/asset-auth.js");
 const { expandCompactSnapshot } = require("../dist/compact.js");
 
-test("LZ4 raw e mesh textual legada", () => {
+test("raw LZ4 and legacy text mesh", () => {
   assert.equal(
     decodeLz4(Buffer.from([0x40, 116, 101, 115, 116]).toString("base64"), 4),
     "test",
@@ -23,7 +23,7 @@ test("LZ4 raw e mesh textual legada", () => {
   assert.match(meshToObj(Buffer.from(mesh.toString().replace(/\n/g, "\r\n"))).toString(), /f 1\/1\/1/);
 });
 
-test("mesh 4.01 converte apenas o LOD principal e rejeita índices inválidos", () => {
+test("mesh 4.01 converts only the main LOD and rejects invalid indices", () => {
   const header = Buffer.alloc(24);
   header.writeUInt16LE(24, 0);
   header.writeUInt32LE(4, 4);
@@ -52,7 +52,7 @@ test("mesh 4.01 converte apenas o LOD principal e rejeita índices inválidos", 
   assert.throws(() => meshToObj(mesh.subarray(0, -1)), /short mesh/);
 });
 
-test("mesh 3.00 converte o LOD principal de acessórios", () => {
+test("mesh 3.00 converts the main accessory LOD", () => {
   const header = Buffer.alloc(16);
   header.writeUInt16LE(16, 0);
   header[2] = 40;
@@ -74,7 +74,7 @@ test("mesh 3.00 converte o LOD principal de acessórios", () => {
   assert.match(obj, /v 2 0 0/);
 });
 
-test("mesh 5.00 ignora dados faciais após a geometria", () => {
+test("mesh 5.00 ignores facial data after geometry", () => {
   const header = Buffer.alloc(32);
   header.writeUInt16LE(32, 0);
   header.writeUInt32LE(3, 4);
@@ -89,7 +89,7 @@ test("mesh 5.00 ignora dados faciais após a geometria", () => {
   assert.match(obj, /f 1\/1\/1 2\/2\/2 3\/3\/3/);
 });
 
-test("mesh 7.00 Draco converte triângulo para OBJ", async () => {
+test("mesh 7.00 Draco converts a triangle to OBJ", async () => {
   const draco = await require("draco3d").createEncoderModule({});
   const builder = new draco.MeshBuilder();
   const mesh = new draco.Mesh();
@@ -130,7 +130,7 @@ test("mesh 7.00 Draco converte triângulo para OBJ", async () => {
   }
 });
 
-test("Asset Delivery interrompe leitura acima do limite", async () => {
+test("Asset Delivery stops reading after the size limit", async () => {
   const valid = await readLimitedAssetBody(new Response("quatro"), 6);
   assert.equal(valid.toString(), "quatro");
   let canceled = false;
@@ -149,7 +149,7 @@ test("Asset Delivery interrompe leitura acima do limite", async () => {
   assert.equal(canceled, true);
 });
 
-test("cookie privado em arquivo é recarregado sem expor o valor na API", async () => {
+test("private cookie file reloads without exposing its value through the API", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "replay-cookie-"));
   const file = path.join(dir, "cookie.txt");
   try {
@@ -165,7 +165,7 @@ test("cookie privado em arquivo é recarregado sem expor o valor na API", async 
   }
 });
 
-test("snapshot compact-v1 legado preserva partes e caminhos", () => {
+test("legacy compact-v1 snapshot preserves parts and paths", () => {
   const expanded = expandCompactSnapshot({
     serverId: "legacy",
     __transport: "compact-v1",
@@ -188,11 +188,18 @@ test("snapshot compact-v1 legado preserva partes e caminhos", () => {
   assert.equal(expanded.compact, undefined);
 });
 
-test("servidor Node recebe replay em blocos e respeita autenticação local", async () => {
+test("Node server accepts chunked replays and enforces local authentication", async () => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "replaymod-ts-"));
   const contentDir = path.join(dataDir, "content");
+  const clientContentDir = path.join(dataDir, "roblox-client-content");
   const materialDir = path.join(contentDir, "material_textures");
   await fs.mkdir(materialDir, { recursive: true });
+  await fs.mkdir(path.join(clientContentDir, "textures"), { recursive: true });
+  await fs.writeFile(
+    path.join(clientContentDir, "textures", "face.png"),
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+  );
+  await fs.writeFile(path.join(dataDir, "outside.png"), "private");
   await fs.writeFile(
     path.join(materialDir, "Plastic.png"),
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
@@ -205,6 +212,7 @@ test("servidor Node recebe replay em blocos e respeita autenticação local", as
       ...process.env,
       SERVER_WEBVIEW_DATA_DIR: dataDir,
       SERVER_WEBVIEW_CONTENT_DIR: contentDir,
+      SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR: clientContentDir,
       SERVER_WEBVIEW_PORT: String(port),
       SERVER_WEBVIEW_PUBLIC_BASE_URL: base,
     },
@@ -230,6 +238,15 @@ test("servidor Node recebe replay em blocos e respeita autenticação local", as
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     assert.ok(ready, `server did not start: ${log}`);
+    const clientContent = await fetch(
+      base + "/api/asset/texture?src=" + encodeURIComponent("rbxasset://textures/face.png"),
+    );
+    assert.equal(clientContent.status, 200);
+    assert.equal(clientContent.headers.get("content-type"), "image/png");
+    const traversal = await fetch(
+      base + "/api/asset/texture?src=" + encodeURIComponent("rbxasset://../outside.png"),
+    );
+    assert.equal(traversal.status, 400);
     const duplicate = spawn(process.execPath, ["dist/server.js"], serverOptions);
     let duplicateError = "";
     duplicate.stderr.on("data", (data) => {
@@ -237,7 +254,7 @@ test("servidor Node recebe replay em blocos e respeita autenticação local", as
     });
     const duplicateExit = await new Promise((resolve) => duplicate.on("exit", resolve));
     assert.equal(duplicateExit, 1);
-    assert.match(duplicateError, /Porta .*já está em uso/);
+    assert.match(duplicateError, /Port .*is already in use/);
     assert.doesNotMatch(duplicateError, /Unhandled 'error' event/);
     const html = await (await fetch(base + "/")).text();
     assert.match(html, /\/static\/vendor\/three\/build\/three\.module\.js/);
@@ -384,7 +401,7 @@ test("servidor Node recebe replay em blocos e respeita autenticação local", as
     const utf8Replay = JSON.stringify({
       ...replay,
       replayId: "get-utf8-replay",
-      replayName: "Gravação móvel",
+      replayName: "Mobile replay",
     });
     const utf8Pieces = [
       utf8Replay.slice(0, 45),
@@ -402,13 +419,32 @@ test("servidor Node recebe replay em blocos e respeita autenticação local", as
     const localUtf8 = await (
       await fetch(base + "/api/replay/latest?replayId=get-utf8-replay")
     ).json();
-    assert.equal(localUtf8.replayName, "Gravação móvel");
+    assert.equal(localUtf8.replayName, "Mobile replay");
     const crossSite = await fetch(
       base +
         `/api/replay/local-chunk?uploadId=x&serverId=test-server&chunkIndex=0&totalChunks=1&chunkData=${getUpload}`,
       { headers: { "Sec-Fetch-Site": "cross-site" } },
     );
     assert.equal(crossSite.status, 403);
+    const localSnapshotPayload = encodeURIComponent(
+      JSON.stringify({ serverId: "test-server", snapshotName: "Local snapshot", parts: [] }),
+    );
+    const localSnapshotResponse = await fetch(
+      base +
+        `/api/snapshot/local-chunk?uploadId=get-snapshot&serverId=test-server&chunkIndex=0&totalChunks=1&chunkData=${localSnapshotPayload}`,
+    );
+    assert.equal(localSnapshotResponse.status, 200);
+    assert.equal((await localSnapshotResponse.json()).snapshotName, "Local snapshot");
+    const localSnapshot = await (
+      await fetch(base + "/api/snapshot/latest?serverId=test-server")
+    ).json();
+    assert.equal(localSnapshot.snapshotName, "Local snapshot");
+    const crossSiteSnapshot = await fetch(
+      base +
+        `/api/snapshot/local-chunk?uploadId=x-snap&serverId=test-server&chunkIndex=0&totalChunks=1&chunkData=${localSnapshotPayload}`,
+      { headers: { "Sec-Fetch-Site": "cross-site" } },
+    );
+    assert.equal(crossSiteSnapshot.status, 403);
     const snapshot = {
       serverId: "test-server",
       parts: [],
@@ -464,7 +500,7 @@ test("servidor Node recebe replay em blocos e respeita autenticação local", as
   }
 });
 
-test("autenticação por código na rede vincula ticket e token ao servidor", async () => {
+test("LAN code authentication binds tickets and tokens to the server", async () => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "replaymod-remote-"));
   const port = 20000 + Math.floor(Math.random() * 20000);
   const base = `http://127.0.0.1:${port}`;

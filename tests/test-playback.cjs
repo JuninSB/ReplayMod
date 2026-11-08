@@ -19,7 +19,7 @@ const clothingUrl = pathToFileURL(
   path.join(__dirname, "../web/static/classic-clothing.mjs"),
 ).href;
 
-test("roupa clássica preserva prioridade e regiões do template Roblox", async () => {
+test("classic clothing preserves Roblox template priority and regions", async () => {
   const THREE = require("three");
   const {
     classicClothingLayers,
@@ -85,7 +85,7 @@ test("roupa clássica preserva prioridade e regiões do template Roblox", async 
     geometry.dispose();
 });
 
-test("texturas de corpo, acessórios e SurfaceAppearance usam composição correta", async () => {
+test("body textures, accessories, and SurfaceAppearance use the correct composition", async () => {
   const THREE = require("three");
   const { meshTexturePolicy, mapFragmentForMode } = await import(appearanceUrl);
   const body = meshTexturePolicy({
@@ -134,7 +134,7 @@ test("texturas de corpo, acessórios e SurfaceAppearance usam composição corre
   );
 });
 
-test("normalização da cena preserva capturas antigas e atuais", async () => {
+test("scene normalization preserves old and current captures", async () => {
   const {
     normalizePart,
     isCharHead,
@@ -245,7 +245,7 @@ test("normalização da cena preserva capturas antigas e atuais", async () => {
   );
 });
 
-test("oclusão oculta da câmera e mantém malha no mapa de sombra", async () => {
+test("occlusion hides from the camera and keeps mesh in the shadow map", async () => {
   const THREE = require("three");
   const { setCameraVisibility, cameraSees } = await import(visibilityUrl);
   const mesh = new THREE.Mesh(
@@ -270,7 +270,7 @@ test("oclusão oculta da câmera e mantém malha no mapa de sombra", async () =>
   mesh.material.dispose();
 });
 
-test("patch de aparência remove maps e mesh quando o objeto perde os componentes", async () => {
+test("appearance patches remove maps and mesh when a part loses those components", async () => {
   const [{ ReplayTimeline }, { normalizePart }, { meshTexturePolicy }] =
     await Promise.all([
       import(moduleUrl),
@@ -330,7 +330,7 @@ test("patch de aparência remove maps e mesh quando o objeto perde os componente
   });
 });
 
-test("timeline aplica criação, mudança e remoção incremental de decals", async () => {
+test("timeline applies incremental decal creation, updates, and removal", async () => {
   const { ReplayTimeline } = await import(moduleUrl);
   const timeline = new ReplayTimeline(
     {
@@ -378,7 +378,7 @@ test("timeline aplica criação, mudança e remoção incremental de decals", as
   assert.equal(timeline.decalMap.has("decal_2"), false);
 });
 
-test("timeline sincroniza Lighting ao avançar e restaura ao voltar", async () => {
+test("timeline syncs Lighting while advancing and restores it when seeking backward", async () => {
   const { ReplayTimeline } = await import(moduleUrl);
   const timeline = new ReplayTimeline(
     {
@@ -398,7 +398,7 @@ test("timeline sincroniza Lighting ao avançar e restaura ao voltar", async () =
   assert.equal(timeline.lighting.clockTime, 10);
 });
 
-test("timeline preserva deltas, câmera, duração e seek reverso", async () => {
+test("timeline preserves deltas, camera, duration, and reverse seeking", async () => {
   const { ReplayTimeline, interpolateAngle } = await import(moduleUrl);
   const timeline = new ReplayTimeline(
     {
@@ -471,11 +471,11 @@ test("timeline preserva deltas, câmera, duração e seek reverso", async () => 
   assert.equal(
     other.map.get("a").color3,
     undefined,
-    "novo replay não herda estado anterior",
+    "a new replay does not inherit previous state",
   );
 });
 
-test("interpolação seleciona apenas as partes alteradas no próximo quadro", async () => {
+test("interpolation selects only parts changed in the next frame", async () => {
   const { ReplayTimeline } = await import(moduleUrl);
   const timeline = new ReplayTimeline(
     {

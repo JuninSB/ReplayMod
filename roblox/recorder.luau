@@ -4,8 +4,14 @@ local env = (getgenv and getgenv()) or _G
 if env.ReplayMod and env.ReplayMod.destroy and env.ReplayMod.destroy() == false then return end
 local transport = (syn and syn.request) or (http and http.request) or http_request or request
 local player = ps.LocalPlayer
-assert(player, "Execute Replay Mod no cliente")
--- O envio local por HttpGet continua disponível se o request do executor falhar.
+assert(player, "Run Replay Mod from the Roblox client")
+local function isLoopbackBase(url)
+    local ipv6 = url:lower():match("^%w+://%[([%x:]+)%]")
+    if ipv6 then return ipv6 == "::1" end
+    local host = url:lower():match("^%w+://([^:/]+)") or ""
+    return host == "localhost" or host:match("^127%.%d+%.%d+%.%d+$") ~= nil
+end
+-- Local HttpGet remains available if the executor's POST request fails.
 local gui = Instance.new("ScreenGui")
 gui.Name = "ReplayMod"
 gui.ResetOnSpawn = false
@@ -21,7 +27,7 @@ panel.Position = UDim2.new(0.04, 0, 0.08, 0)
 panel.BackgroundColor3 = Color3.fromRGB(19, 23, 29)
 panel.Parent = gui
 local limit = Instance.new("UISizeConstraint", panel)
-limit.MaxSize = Vector2.new(350, 310)
+limit.MaxSize = Vector2.new(350, 380)
 local panelScale = Instance.new("UIScale", panel)
 Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 14)
 local padding = Instance.new("UIPadding", panel)
@@ -55,7 +61,7 @@ title.TextColor3 = Color3.fromRGB(237, 242, 248)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "REPLAY"
+title.Text = "REPLAY MOD"
 title.Parent = bar
 local minimize = Instance.new("TextButton")
 minimize.Size = UDim2.fromOffset(30, 28)
@@ -67,12 +73,27 @@ minimize.Font = Enum.Font.Gotham
 minimize.TextSize = 17
 minimize.Parent = bar
 Instance.new("UICorner", minimize).CornerRadius = UDim.new(0, 8)
+local captureMode = "replay"
+local modeSelector = Instance.new("Frame")
+modeSelector.Size = UDim2.new(1, 0, 0, 32)
+modeSelector.BackgroundTransparency = 1
+modeSelector.Parent = panel
+local modeLayout = Instance.new("UIListLayout", modeSelector)
+modeLayout.FillDirection = Enum.FillDirection.Horizontal
+modeLayout.Padding = UDim.new(0, 6)
+modeLayout.SortOrder = Enum.SortOrder.LayoutOrder
+local replayModeButton = control("TextButton", "Replay", 32)
+replayModeButton.Size = UDim2.new(0.5, -3, 1, 0)
+replayModeButton.Parent = modeSelector
+local snapshotModeButton = control("TextButton", "Snapshot", 32)
+snapshotModeButton.Size = UDim2.new(0.5, -3, 1, 0)
+snapshotModeButton.Parent = modeSelector
 local code = control("TextBox", "")
-code.PlaceholderText = "Código (somente servidor remoto)"
+code.PlaceholderText = "20-digit code from the server terminal"
 code.ClearTextOnFocus = false
-code.Visible = not REPLAY_BASE_URL:find("127.0.0.1", 1, true)
+code.Visible = not isLoopbackBase(REPLAY_BASE_URL)
 local nameInput = control("TextBox", "")
-nameInput.PlaceholderText = "Nome do replay"
+nameInput.PlaceholderText = "Replay name"
 nameInput.ClearTextOnFocus = false
 local ticks = Instance.new("Frame")
 ticks.Size = UDim2.new(1, 0, 0, 32)
@@ -96,26 +117,62 @@ tickButton.TextSize = 12
 tickButton.Parent = ticks
 Instance.new("UICorner", tickButton).CornerRadius = UDim.new(0, 7)
 local function updateTickButton()
-    tickButton.Text = tostring(captureFps) .. "/s  ·  tocar para mudar"
+    tickButton.Text = tostring(captureFps) .. "/s  ·  tap to change"
     tickButton.BackgroundColor3 = tickColors[captureFps]
 end
 updateTickButton()
-local action = control("TextButton", "Gravar", 34)
+local action = control("TextButton", "Record replay", 34)
 action.BackgroundColor3 = Color3.fromRGB(30, 108, 82)
-local send = control("TextButton", "Enviar", 32)
+local send = control("TextButton", "Send replay", 32)
 send.Visible = false
-local status = control("TextLabel", "Captura incremental · 20/s", 28)
+local status = control("TextLabel", "Incremental replay capture · 20 ticks/s", 28)
 status.TextWrapped = true
 status.BackgroundTransparency = 1
-local close = control("TextButton", "Fechar", 28)
-local fields = {code, nameInput, ticks, action, send, status, close}
+local discard = control("TextButton", "Discard capture", 28)
+discard.Visible = false
+local close = control("TextButton", "Close", 28)
+local fields = {modeSelector, code, nameInput, ticks, action, send, discard, status, close}
 local captured, encodedChunks = nil, nil
 local frameBuffer, frameBufferBytes = {}, 0
 local minimized = false
 local keepPanelOnScreen
+local recording, busy, disposed, preparing, paused = false, false, false, false, false
+local pausedAt, pausedTotal = 0, 0
+local function updateCaptureMode()
+    local isReplay = captureMode == "replay"
+    replayModeButton.BackgroundColor3 = isReplay and Color3.fromRGB(30, 108, 82) or Color3.fromRGB(33, 40, 50)
+    snapshotModeButton.BackgroundColor3 = not isReplay and Color3.fromRGB(30, 108, 82) or Color3.fromRGB(33, 40, 50)
+    title.Text = isReplay and "REPLAY MOD" or "SNAPSHOT"
+    nameInput.PlaceholderText = isReplay and "Replay name" or "Snapshot name"
+    ticks.Visible = isReplay and not minimized
+    action.Text = isReplay and "Record replay" or "Capture snapshot"
+    send.Text = isReplay and "Send replay" or "Send snapshot"
+end
+local function selectCaptureMode(mode)
+    if recording or preparing or busy then
+        status.Text = "Wait for the current capture to finish before changing its type."
+        return
+    end
+    if captured then
+        status.Text = "Send or discard this capture before changing its type."
+        return
+    end
+    captureMode = mode
+    updateCaptureMode()
+    status.Text = mode == "replay" and "Incremental replay capture · 20 ticks/s" or "One-time scene snapshot."
+end
+replayModeButton.Activated:Connect(function() selectCaptureMode("replay") end)
+snapshotModeButton.Activated:Connect(function() selectCaptureMode("snapshot") end)
+updateCaptureMode()
 minimize.Activated:Connect(function()
     minimized = not minimized
-    for _, item in ipairs(fields) do item.Visible = not minimized and (item ~= code or not REPLAY_BASE_URL:find("127.0.0.1", 1, true)) and (item ~= send or captured ~= nil) end
+    for _, item in ipairs(fields) do
+        item.Visible = not minimized
+            and (item ~= code or not isLoopbackBase(REPLAY_BASE_URL))
+            and (item ~= ticks or captureMode == "replay")
+            and (item ~= send or captured ~= nil)
+            and (item ~= discard or captured ~= nil)
+    end
     if minimized then
         panel.AutomaticSize = Enum.AutomaticSize.None
         panel.Size = UDim2.fromOffset(146, 40)
@@ -124,11 +181,9 @@ minimize.Activated:Connect(function()
         panel.Size = UDim2.new(0.92, 0, 0, 0)
     end
     minimize.Text = minimized and "+" or "−"
-    title.Text = minimized and "REC ●" or "REPLAY"
+    title.Text = minimized and (captureMode == "replay" and "REC ●" or "SNAP ●") or (captureMode == "replay" and "REPLAY MOD" or "SNAPSHOT")
     if keepPanelOnScreen then keepPanelOnScreen() end
 end)
-local recording, busy, disposed, preparing, paused = false, false, false, false, false
-local pausedAt, pausedTotal = 0, 0
 local connections, watch, decalWatch = {}, {}, {}
 local graphicsWatch, clothingWatch = {}, {}
 local ids = setmetatable({}, {__mode = "k"})
@@ -306,24 +361,21 @@ tickButton.Activated:Connect(function()
     status.Text = tostring(captureFps) .. " ticks/s" .. (captureFps == 60 and " · pode reduzir FPS" or "")
 end)
 local userInput = game:GetService("UserInputService")
-local guiService = game:GetService("GuiService")
 local dragInput, dragStart, panelStart = nil, nil, nil
 keepPanelOnScreen = function()
     local camera = workspace.CurrentCamera
-    local topInset, bottomInset = guiService:GetGuiInset()
     local viewportSize = camera and camera.ViewportSize or Vector2.new(800, 600)
-    local screen = viewportSize + topInset + bottomInset
-    local availableHeight = math.max(120, screen.Y - 20)
-    local availableWidth = math.max(180, screen.X - 20)
-    local nominalWidth = math.min(350, screen.X * 0.92)
-    panelScale.Scale = math.min(1, availableHeight / 310, availableWidth / math.max(180, nominalWidth))
+    local availableHeight = math.max(120, viewportSize.Y - 20)
+    local availableWidth = math.max(180, viewportSize.X - 20)
+    local nominalWidth = math.min(350, viewportSize.X * 0.92)
+    panelScale.Scale = math.min(1, availableHeight / 380, availableWidth / math.max(180, nominalWidth))
     task.defer(function()
         if not panel.Parent then return end
-        local maxX = math.max(4, screen.X - panel.AbsoluteSize.X - 4)
-        local maxY = math.max(4, screen.Y - panel.AbsoluteSize.Y - 4)
+        local maxX = math.max(4, viewportSize.X - panel.AbsoluteSize.X - 4)
+        local maxY = math.max(4, viewportSize.Y - panel.AbsoluteSize.Y - 4)
         panel.Position = UDim2.fromOffset(
             math.clamp(panel.AbsolutePosition.X, 4, maxX),
-            math.clamp(panel.AbsolutePosition.Y, 0, maxY)
+            math.clamp(panel.AbsolutePosition.Y, 4, maxY)
         )
     end)
 end
@@ -343,12 +395,10 @@ connections[#connections + 1] = userInput.InputChanged:Connect(function(input)
     local delta = input.Position - dragStart
     local camera = workspace.CurrentCamera
     local viewportSize = camera and camera.ViewportSize or Vector2.new(800, 600)
-    local topInset, bottomInset = guiService:GetGuiInset()
-    local screen = viewportSize + topInset + bottomInset
-    local maxX = math.max(4, screen.X - panel.AbsoluteSize.X - 4)
-    local maxY = math.max(4, screen.Y - panel.AbsoluteSize.Y - 4)
+    local maxX = math.max(4, viewportSize.X - panel.AbsoluteSize.X - 4)
+    local maxY = math.max(4, viewportSize.Y - panel.AbsoluteSize.Y - 4)
     local x = math.clamp(panelStart.X + delta.X, 4, maxX)
-    local y = math.clamp(panelStart.Y + delta.Y, 0, maxY)
+    local y = math.clamp(panelStart.Y + delta.Y, 4, maxY)
     panel.Position = UDim2.fromOffset(x, y)
 end)
 connections[#connections + 1] = userInput.InputEnded:Connect(function(input)
@@ -420,8 +470,8 @@ local function stop()
         flushFrameBuffer()
         captured.durationMs = elapsedMs()
         captured.durMs = captured.durationMs
-        status.Text = "Gravação pronta para enviar."
-        action.Text = "Nova gravação"
+        status.Text = "Replay ready to send."
+        action.Text = "Replay captured"
         send.Visible = not minimized
     end
 end
@@ -589,7 +639,7 @@ local function sample()
     local windowSeconds = now - statsAt
     if windowSeconds >= 1 then
         local pending = math.max(0, #dirtyQueue - dirtyHead + 1) + math.max(0, #removedQueue - removedHead + 1)
-        status.Text = string.format("● %d alvo · %.1f real/s · %ds\n%d partes · %d pendentes",
+        status.Text = string.format("● %d target · %.1f actual/s · %ds\n%d parts · %d pending",
             captureFps, statsSamples / windowSeconds, math.floor(elapsedMs() / 1000), partCount, pending)
         statsAt, statsSamples = now, 0
     end
@@ -615,9 +665,9 @@ local function walkWorkspace(visit)
 end
 local function begin()
     preparing = true
-    status.Text = "Preparando cena em lotes…"
-    action.Text = "Preparando…"
-    captured = {stepMs = 1000 / captureFps, captureFps = captureFps, tickChanges = {}, serverId = srvId(), placeId = game.PlaceId, replayName = nameInput.Text,
+    status.Text = "Scanning the scene in batches…"
+    action.Text = "Preparing…"
+    captured = {kind = captureMode, stepMs = 1000 / captureFps, captureFps = captureFps, tickChanges = {}, serverId = srvId(), placeId = game.PlaceId, replayName = nameInput.Text, snapshotName = nameInput.Text,
         base = {parts = {}, decals = {}, camera = readCamera(), lighting = readLighting()}, frameBlocks = {}, chatEvents = {}}
     lastLighting = captured.base.lighting
     encodedChunks = nil
@@ -683,9 +733,20 @@ local function begin()
     recording = true
     preparing = false
     baseIndices, baseInstances, baseDecals, baseDecalSeen = {}, {}, {}, {}
-    action.Text = "Pausar gravação"
+    if captureMode == "snapshot" then
+        recording = false
+        captured.durationMs = 0
+        preparing = false
+        action.Text = "Capture another snapshot"
+        send.Text = "Send snapshot"
+        send.Visible = not minimized
+        discard.Visible = not minimized
+        status.Text = "Snapshot ready to send."
+        return
+    end
+    action.Text = "Pause recording"
     send.Visible = not minimized
-    status.Text = "● Gravando a " .. tostring(captureFps) .. " ticks/s"
+    status.Text = "● Recording at " .. tostring(captureFps) .. " ticks/s"
     nextSampleAt = os.clock() + 1 / captureFps
     task.spawn(function()
         while recording and not disposed do
@@ -698,7 +759,7 @@ local function begin()
             elseif now >= nextSampleAt then
                 nextSampleAt += interval
                 local ok, err = pcall(sample)
-                if not ok then stop(); status.Text = "Captura: " .. tostring(err); break end
+                if not ok then stop(); status.Text = "Capture error: " .. tostring(err); break end
                 if nextSampleAt < os.clock() then nextSampleAt = os.clock() + interval end
             end
         end
@@ -753,13 +814,13 @@ connections[#connections + 1] = chatService.MessageReceived:Connect(function(mes
     local source = message.TextSource
     local sender = source and ps:GetPlayerByUserId(source.UserId)
     table.insert(captured.chatEvents, {t = elapsedMs(),
-        userId = source and source.UserId or 0, name = sender and sender.DisplayName or "Sistema",
+        userId = source and source.UserId or 0, name = sender and sender.DisplayName or "System",
         msg = tostring(message.Text):sub(1, 220)})
 end)
-local function chunksForReplay()
+local function chunksForCapture()
     if encodedChunks then return encodedChunks end
     flushFrameBuffer()
-    status.Text = "Preparando blocos para envio…"
+    status.Text = "Preparing upload chunks…"
     local chunks, current = {}, ""
     local function append(text)
         local at = 1
@@ -776,31 +837,47 @@ local function chunksForReplay()
             at = last + 1
         end
     end
-    append('{"serverId":' .. hs:JSONEncode(captured.serverId) .. ',"placeId":' .. hs:JSONEncode(captured.placeId)
-        .. ',"replayName":' .. hs:JSONEncode(captured.replayName) .. ',"stepMs":' .. tostring(captured.stepMs) .. ',"captureFps":' .. tostring(captured.captureFps) .. ',"tickChanges":' .. hs:JSONEncode(captured.tickChanges) .. ',"durationMs":'
-        .. tostring(captured.durationMs) .. ',"base":{"parts":[')
-    for i, part in ipairs(captured.base.parts) do
-        append((i > 1 and "," or "") .. hs:JSONEncode(part))
-        if i % 20 == 0 then task.wait() end
+    if captured.kind == "snapshot" then
+        append('{"serverId":' .. hs:JSONEncode(captured.serverId) .. ',"placeId":' .. hs:JSONEncode(captured.placeId)
+            .. ',"snapshotName":' .. hs:JSONEncode(captured.snapshotName) .. ',"parts":[')
+        for i, part in ipairs(captured.base.parts) do
+            append((i > 1 and "," or "") .. hs:JSONEncode(part))
+            if i % 20 == 0 then task.wait() end
+        end
+        append('],"decals":[')
+        for i, decal in ipairs(captured.base.decals) do
+            append((i > 1 and "," or "") .. hs:JSONEncode(decal))
+            if i % 20 == 0 then task.wait() end
+        end
+        append('],"camera":' .. (captured.base.camera and hs:JSONEncode(captured.base.camera) or "null")
+            .. ',"lighting":' .. hs:JSONEncode(captured.base.lighting) .. '}')
+    else
+        append('{"serverId":' .. hs:JSONEncode(captured.serverId) .. ',"placeId":' .. hs:JSONEncode(captured.placeId)
+            .. ',"replayName":' .. hs:JSONEncode(captured.replayName) .. ',"stepMs":' .. tostring(captured.stepMs) .. ',"captureFps":' .. tostring(captured.captureFps) .. ',"tickChanges":' .. hs:JSONEncode(captured.tickChanges) .. ',"durationMs":'
+            .. tostring(captured.durationMs) .. ',"base":{"parts":[')
+        for i, part in ipairs(captured.base.parts) do
+            append((i > 1 and "," or "") .. hs:JSONEncode(part))
+            if i % 20 == 0 then task.wait() end
+        end
+        append('],"decals":[')
+        for i, decal in ipairs(captured.base.decals) do
+            append((i > 1 and "," or "") .. hs:JSONEncode(decal))
+            if i % 20 == 0 then task.wait() end
+        end
+        append('],"camera":' .. (captured.base.camera and hs:JSONEncode(captured.base.camera) or "null")
+            .. ',"lighting":' .. hs:JSONEncode(captured.base.lighting) .. '},"frameBlocks":[')
+        for i, block in ipairs(captured.frameBlocks) do
+            append((i > 1 and "," or "") .. hs:JSONEncode(block))
+            if i % 20 == 0 then task.wait() end
+        end
+        append('],"chatEvents":' .. hs:JSONEncode(captured.chatEvents) .. '}')
     end
-    append('],"decals":[')
-    for i, decal in ipairs(captured.base.decals) do
-        append((i > 1 and "," or "") .. hs:JSONEncode(decal))
-        if i % 20 == 0 then task.wait() end
-    end
-    append('],"camera":' .. (captured.base.camera and hs:JSONEncode(captured.base.camera) or "null")
-        .. ',"lighting":' .. hs:JSONEncode(captured.base.lighting) .. '},"frameBlocks":[')
-    for i, block in ipairs(captured.frameBlocks) do
-        append((i > 1 and "," or "") .. hs:JSONEncode(block))
-        if i % 20 == 0 then task.wait() end
-    end
-    append('],"chatEvents":' .. hs:JSONEncode(captured.chatEvents) .. '}')
     if #current > 0 then table.insert(chunks, current) end
     encodedChunks = chunks
     return chunks
 end
-local function uploadByHttpGet(chunks, sid)
-    if not REPLAY_BASE_URL:find("127.0.0.1", 1, true) then error("GET local indisponível fora do localhost") end
+local function uploadByHttpGet(chunks, sid, kind)
+    if not isLoopbackBase(REPLAY_BASE_URL) then error("HTTP GET fallback is only available on localhost.") end
     local function pieceEnd(chunk, at)
         local last = math.min(#chunk, at + 3500 - 1)
         if last < #chunk then
@@ -824,19 +901,20 @@ local function uploadByHttpGet(chunks, sid)
         while at <= #chunk do
             local last = pieceEnd(chunk, at)
             local piece = chunk:sub(at, last)
-            local url = REPLAY_BASE_URL .. "/api/replay/local-chunk?uploadId=" .. hs:UrlEncode(uploadId)
+            local route = kind == "snapshot" and "/api/snapshot/local-chunk" or "/api/replay/local-chunk"
+            local url = REPLAY_BASE_URL .. route .. "?uploadId=" .. hs:UrlEncode(uploadId)
                 .. "&serverId=" .. hs:UrlEncode(sid) .. "&chunkIndex=" .. tostring(index)
                 .. "&totalChunks=" .. tostring(total) .. "&chunkData=" .. hs:UrlEncode(piece)
             local ok, body = pcall(function() return game:HttpGet(url, true) end)
-            if not ok then error("HttpGet local falhou: " .. tostring(body)) end
+            if not ok then error("Local HttpGet failed: " .. tostring(body)) end
             local decodedOk, data = pcall(function() return hs:JSONDecode(body) end)
-            if not decodedOk or type(data) ~= "table" then error("HttpGet local: " .. tostring(body):sub(1, 150)) end
+            if not decodedOk or type(data) ~= "table" then error("Local HttpGet response: " .. tostring(body):sub(1, 150)) end
             if data.error then error(tostring(data.error)) end
             result = data
             index += 1
             at = last + 1
             if index % 25 == 0 or index == total then
-                status.Text = string.format("Enviando local %d/%d (%.0f%%)", index, total, index / total * 100)
+                status.Text = string.format("Sending locally %d/%d (%.0f%%)", index, total, index / total * 100)
                 task.wait()
             end
         end
@@ -845,40 +923,58 @@ local function uploadByHttpGet(chunks, sid)
 end
 local function upload()
     local sid = captured.serverId
-    status.Text = "Autenticando…"
+    local kind = captured.kind or "replay"
+    local endpoint = kind == "snapshot" and "/api/snapshot/chunk" or "/api/replay/chunk"
+    local expectedId = kind == "snapshot" and "serverId" or "replayId"
+    local expectedName = kind == "snapshot" and "snapshotName" or "replayName"
+    status.Text = "Authenticating…"
     local token, useLocalGet = nil, false
-    if REPLAY_BASE_URL:find("127.0.0.1", 1, true) then
+    if isLoopbackBase(REPLAY_BASE_URL) then
         local authenticated, reply = pcall(api, "/api/auth/local", {serverId = sid})
         if authenticated then token = reply.uploadToken
-        else useLocalGet = true; status.Text = "POST indisponível; preparando envio local…" end
+        else useLocalGet = true; status.Text = "POST unavailable; preparing local transfer…" end
     else
-        local ticket = api("/api/auth/redeem", {code = code.Text:gsub("%s", ""), serverId = sid})
+        local accessCode = code.Text:gsub("%D", "")
+        if #accessCode ~= 20 then
+            error("Enter the 20-digit login code printed in the server terminal. It expires after 30 minutes.")
+        end
+        local redeemed, ticket = pcall(api, "/api/auth/redeem", {code = accessCode, serverId = sid})
+        if not redeemed then
+            local message = tostring(ticket)
+            if message:find("code not found", 1, true) then
+                error("That login code is invalid or expired. Restart the server and use its current terminal code.")
+            elseif message:find("invalid code or serverId", 1, true) then
+                error("Remote login was rejected. Check the 20-digit code and the server connection.")
+            end
+            error(message)
+        end
         token = api("/api/auth/exchange", {ticket = ticket.ticket, serverId = sid}).uploadToken
     end
-    local chunks = chunksForReplay()
+    local chunks = chunksForCapture()
     local uploadId = hs:GenerateGUID(false)
     local result
-    if useLocalGet then result = uploadByHttpGet(chunks, sid) else
+    if useLocalGet then result = uploadByHttpGet(chunks, sid, kind) else
     for i, chunk in ipairs(chunks) do
-        local sent, reply = pcall(api, "/api/replay/chunk", {uploadId = uploadId, serverId = sid,
+        local sent, reply = pcall(api, endpoint, {uploadId = uploadId, serverId = sid,
             chunkIndex = i - 1, totalChunks = #chunks, chunkData = chunk}, token)
         if not sent then
-            status.Text = "POST falhou; tentando envio local pelo HttpGet…"
-            result = uploadByHttpGet(chunks, sid)
+            status.Text = "POST failed; trying the local HttpGet fallback…"
+            result = uploadByHttpGet(chunks, sid, kind)
             break
         end
         result = reply
         if i % 4 == 0 or i == #chunks then
-            status.Text = string.format("Enviando %d/%d blocos (%.0f%%)", i, #chunks, i / #chunks * 100)
+            status.Text = string.format("Sending %d/%d chunks (%.0f%%)", i, #chunks, i / #chunks * 100)
             task.wait()
         end
     end
     end
-    if not result or not result.ok or not result.replayId then error("Envio terminou sem confirmação do servidor") end
-    status.Text = "Salvo: " .. tostring(result.replayName)
+    if not result or not result.ok or not result[expectedId] then error("The server did not confirm the upload.") end
+    status.Text = "Saved: " .. tostring(result[expectedName] or (kind == "snapshot" and "Snapshot" or "Replay"))
     captured, encodedChunks = nil, nil
     send.Visible = false
-    action.Text = "Iniciar gravação"
+    discard.Visible = false
+    updateCaptureMode()
 end
 connections[#connections + 1] = action.Activated:Connect(function()
     if busy or disposed or preparing then return end
@@ -886,11 +982,11 @@ connections[#connections + 1] = action.Activated:Connect(function()
         paused = not paused
         if paused then
             pausedAt = os.clock()
-            action.Text = "Retomar gravação"
-            status.Text = "Pausado · pronto para retomar ou enviar"
+            action.Text = "Resume recording"
+            status.Text = "Paused · ready to resume or send"
         else
             preparing = true
-            action.Text = "Retomando…"
+            action.Text = "Resuming…"
             task.spawn(function()
                 walkWorkspace(function(inst)
                     if disposed or not preparing then return false end
@@ -904,15 +1000,21 @@ connections[#connections + 1] = action.Activated:Connect(function()
                 paused = false
                 preparing = false
                 statsAt, statsSamples = os.clock(), 0
-                action.Text = "Pausar gravação"
-                status.Text = "● Gravando a " .. tostring(captureFps) .. " ticks/s"
+                action.Text = "Pause recording"
+                status.Text = "● Recording at " .. tostring(captureFps) .. " ticks/s"
             end)
         end
         return
     end
     if captured then
-        status.Text = "Envie ou descarte a gravação atual."
-        return
+        if captured.kind == "snapshot" then
+            captured, encodedChunks = nil, nil
+            send.Visible = false
+            discard.Visible = false
+        else
+            status.Text = "Send or discard the current replay before starting another."
+            return
+        end
     end
     busy = true
     task.spawn(function()
@@ -921,7 +1023,7 @@ connections[#connections + 1] = action.Activated:Connect(function()
         if not ok then
             preparing, recording = false, false
             status.Text = tostring(err)
-            action.Text = captured and "Nova gravação" or "Iniciar gravação"
+            action.Text = captured and "Replay captured" or (captureMode == "snapshot" and "Capture snapshot" or "Record replay")
         end
     end)
 end)
@@ -929,21 +1031,31 @@ connections[#connections + 1] = send.Activated:Connect(function()
     if busy or preparing or not captured then return end
     if recording then stop() end
     busy = true
-    send.Text = "Enviando…"
+    send.Text = "Sending…"
     task.spawn(function()
         local ok, err = pcall(upload)
         busy = false
-        send.Text = "Enviar gravação"
+        send.Text = captureMode == "snapshot" and "Send snapshot" or "Send replay"
         if not ok then
             status.Text = tostring(err)
             send.Visible = not minimized
         end
     end)
 end)
+connections[#connections + 1] = discard.Activated:Connect(function()
+    if busy or preparing then return end
+    if recording then recording = false end
+    captured, encodedChunks = nil, nil
+    frameBuffer, frameBufferBytes = {}, 0
+    send.Visible = false
+    discard.Visible = false
+    updateCaptureMode()
+    status.Text = "Capture discarded. Choose Replay or Snapshot."
+end)
 local function destroy()
-    if busy or preparing then status.Text = "Aguarde a operação terminar"; return false end
+    if busy or preparing then status.Text = "Wait for the current operation to finish."; return false end
     if recording then stop(); return false end
-    if captured and close.Text ~= "Descartar e fechar" then close.Text = "Descartar e fechar"; return false end
+    if captured and close.Text ~= "Discard and close" then close.Text = "Discard and close"; return false end
     disposed = true
     for _, connection in ipairs(connections) do connection:Disconnect() end
     for _, connection in pairs(watch) do connection:Disconnect() end

@@ -1,28 +1,28 @@
-# Sistema visual e interação
+# Visual system and interaction
 
-## Direção
+## Direction
 
-Ferramenta técnica de reprodução: a cena é o conteúdo principal, a biblioteca ajuda a encontrá-la e os controles de transporte ficam imediatamente junto ao quadro. A linguagem usa verbos concretos como **Gravar**, **Enviar**, **Reproduzir** e **Biblioteca**. Não há números, depoimentos ou prévias inventadas.
+Replay Mod is a technical playback tool. The scene is the primary content, the library helps users find a capture, and playback controls stay close to the viewer. Use direct labels such as **Record**, **Upload**, **Play**, and **Library**. Do not invent metrics, testimonials, or previews.
 
-| Papel               | Decisão atual                                                                 |
-| ------------------- | ----------------------------------------------------------------------------- |
-| Fundo e superfícies | Graphite `#101318`, `#171c23`, `#202731`                                      |
-| Linha               | `#35404d` separa ferramentas e dados                                          |
-| Ação e foco         | Mint `#7ce6bd`; estados de erro têm texto além da cor                         |
-| Tipografia          | Fonte de sistema; títulos amplos na biblioteca, metadados compactos no viewer |
-| Geometria           | Controles de 7 px de raio, painéis de 10 px, bordas visíveis                  |
-| Movimento           | Apenas feedback curto; `prefers-reduced-motion` remove animações              |
+| Role | Current decision |
+| --- | --- |
+| Background and surfaces | Graphite `#101318`, `#171c23`, `#202731` |
+| Divider | `#35404d` separates tools and content |
+| Action and focus | Mint `#7ce6bd`; errors use text as well as color |
+| Typography | System font; large library titles and compact viewer metadata |
+| Geometry | 7 px control radius, 10 px panels, visible borders |
+| Motion | Short feedback only; `prefers-reduced-motion` removes animation |
 
-## Organização por tela
+## Screen organization
 
-Na biblioteca, as abas **Replays** e **Snapshots** trocam a coleção sem misturar os dois tipos. Ao abrir uma cena, o canvas ocupa a janela inteira; nome e transporte ficam sobre a cena e a sidebar recolhível abriga **Explorer** e **Detalhes**. A timeline adapta sua grade em telas estreitas. A sidebar fecha com Escape, mantém foco previsível e não reduz a área do canvas.
+The library's **Replays** and **Snapshots** tabs show separate collections. When a capture opens, the canvas fills the viewport; the title and playback controls overlay the scene, while a collapsible sidebar contains **Explorer** and **Details**. The timeline adapts to narrow screens. Escape closes the sidebar, focus remains predictable, and the canvas stays full size.
 
-Os botões de toque movem a câmera com alvos de 48 px. Arrastar a cena muda a direção. O Explorer acompanha os `BasePart` e decals disponíveis na captura e atualiza sua árvore ao reproduzir ou buscar no replay; snapshots mostram a árvore do instante capturado. Não representa instâncias que o gravador não salvou. O painel de gravação fica dentro dos limites da tela; um botão percorre 5/10/20/30/60 ticks/s, com aviso em 60. O player oferece pausar/continuar, seek, passos de 5 s, câmera gravada/livre e velocidades de 0,25× a 4×.
+Touch controls use targets of at least 48 px. Dragging the scene rotates the camera. Explorer displays BaseParts and decals represented in the capture and updates while replaying or seeking; snapshots show the tree at capture time. It cannot display instances the recorder did not save. The recorder panel stays within screen bounds and can select 5, 10, 20, 30, or 60 ticks per second; 60 carries a performance warning. Playback supports pause/resume, seek, 5-second steps, recorded/free camera, and 0.25× to 4× speed.
 
-O gravador salva propriedades globais de Lighting, Sky, Atmosphere e efeitos suportados; mudanças no tempo viram eventos no replay. O viewer aproxima iluminação, neblina, sombras, céu, Bloom, ColorCorrection e Blur em Three.js. É uma reprodução aproximada, pois o renderer não é a engine Roblox e o replay ainda não guarda skinning/pose facial de Dynamic Heads nem todos os assets do Sky.
+The recorder saves supported global Lighting, Sky, Atmosphere, and effect properties; changes over time become replay events. The Three.js viewer approximates lighting, fog, shadows, sky, Bloom, ColorCorrection, and Blur. It is not the Roblox renderer, and captures do not yet preserve Dynamic Head facial skinning or every Sky asset.
 
-O painel do executor é compacto, ignora o inseto superior do Roblox e pode ser arrastado pelo título até o topo da tela. A seleção Snapshot/Replay permanece disponível na barra do viewer; na biblioteca, abas selecionam a coleção.
+The executor panel is compact, ignores Roblox's top inset, and can be dragged by its title to the top edge. The viewer toolbar provides the Replay/Snapshot choice; library tabs select the collection.
 
 ## Visual verification
 
-Check the viewer at desktop and mobile widths, including portrait and landscape, touch controls, playback states, and empty/error states. A browser screenshot does not replace testing with a Roblox executor or on a physical mobile device.
+Check the viewer at desktop and mobile widths, portrait and landscape, touch controls, playback states, and empty/error states. Browser screenshots do not replace tests with a Roblox executor or on a physical mobile device.

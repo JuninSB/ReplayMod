@@ -1,0 +1,10 @@
+title: Replay Mod
+description: Roblox scene capture, replay, and asset delivery notes for developers.
+theme: minima
+markdown: kramdown
+header_pages:
+  - index.md
+  - setup.md
+  - asset-delivery.md
+  - development.md
+  - api.md

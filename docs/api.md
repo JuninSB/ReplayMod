@@ -1,35 +1,32 @@
-# Contrato HTTP local
+# Local HTTP API
 
-Base padrão: `http://127.0.0.1:8000`. Respostas de erro usam `{ "error": "mensagem" }` com 400, 401, 403, 404, 409, 413 ou 500 conforme a causa. O servidor não expõe tokens no script hospedado.
+Default base URL: `http://127.0.0.1:8000`. Error responses use `{ "error": "message" }` with an HTTP status such as 400, 401, 403, 404, 409, 413, or 500. The hosted recorder script contains no upload token.
 
-| Método e rota | Uso | Entrada principal | Saída |
+| Method and route | Purpose | Main input | Output |
 | --- | --- | --- | --- |
-| `GET /health` | Saúde | nenhuma | `{status:"ok",runtime:"node"}` |
-| `GET /recorder.lua` | Script executor | nenhuma | texto Luau |
-| `POST /api/auth/local` | Token loopback | `{serverId}` | `{uploadToken}` |
-| `POST /api/auth/redeem` | Resgatar código em modo LAN | `{code,serverId}` | `{ticket,expiresInSeconds:90}` |
-| `POST /api/auth/exchange` | Trocar ticket por token | `{ticket,serverId}` | `{uploadToken,expiresInSeconds:3600}` |
-| `POST /api/replay/chunk` | Envio autenticado | `X-Upload-Token`, `uploadId`, `serverId`, `chunkIndex`, `totalChunks`, `chunkData` | parcial ou `{ok,replayId,replayName}` |
-| `GET /api/replay/local-chunk` | Fallback loopback | mesmos campos na query, sem token | parcial ou confirmação |
-| `POST /api/replay` | Envio completo | token e replay JSON | `{ok,replayId,replayName}` |
-| `GET /api/replays` | Biblioteca | nenhuma | `{replays:[...]}` |
-| `GET /api/replay/latest?replayId=...` | Replay | ID opcional | payload persistido |
-| `GET /api/servers` e `/api/snapshot/latest` | Snapshots legados | `serverId` opcional | lista/payload |
-| `GET /api/asset/texture`, `/api/asset/mesh` | Proxy Roblox | `src` | bytes de asset ou erro |
-| `GET /api/material/map` | Mapa local/CDN | `material`, `type` | imagem ou erro |
+| `GET /health` | Health check | None | `{status:"ok",runtime:"node"}` |
+| `GET /recorder.lua` | Executor recorder | None | Luau source text |
+| `POST /api/auth/local` | Loopback token | `{serverId}` | `{uploadToken}` |
+| `POST /api/auth/redeem` | Redeem LAN code | `{code,serverId}` | `{ticket,expiresInSeconds:90}` |
+| `POST /api/auth/exchange` | Exchange ticket | `{ticket,serverId}` | `{uploadToken,expiresInSeconds:3600}` |
+| `POST /api/replay/chunk` | Authenticated replay chunk | `X-Upload-Token`, `uploadId`, `serverId`, `chunkIndex`, `totalChunks`, `chunkData` | Partial status or `{ok,replayId,replayName}` |
+| `GET /api/replay/local-chunk` | Loopback chunk fallback | Same fields in query, without token | Partial status or confirmation |
+| `POST /api/replay` | Complete replay upload | Token and replay JSON | `{ok,replayId,replayName}` |
+| `GET /api/replays` | Replay library | None | `{replays:[...]}` |
+| `GET /api/replay/latest?replayId=...` | Load replay | Optional ID | Persisted replay payload |
+| `GET /api/servers`, `GET /api/snapshot/latest` | Legacy snapshot reads | Optional `serverId` | List or snapshot payload |
+| `GET /api/snapshot/chunk` | Read stored snapshot chunk | Snapshot identifiers | Chunk data |
+| `GET /api/asset/texture`, `GET /api/asset/mesh` | Roblox content proxy | `src` | Asset bytes or an error |
+| `GET /api/material/map` | Material texture proxy | `material`, `type` | Image bytes or an error |
 
-O proxy de mesh converte FileMesh 1.00, 1.01, 2.00, 3.00, 3.01, 4.00, 4.01, 5.00 e 7.00 (Draco) para OBJ. Nos formatos 3–5 e 7, entrega o primeiro LOD quando ele está indicado. Assets sem acesso público ou em formatos ainda não suportados retornam erro; a textura é uma requisição separada.
+The mesh proxy converts FileMesh versions 1.00, 1.01, 2.00, 3.00, 3.01, 4.00, 4.01, 5.00, and 7.00 (Draco) to OBJ. For versions 3–5 and 7, it returns the first LOD when one is indicated. Assets without permission and unsupported formats return an error; texture delivery is a separate request.
 
-`base.lighting` das novas gravações inclui `brightness`, `clockTime`, `ambient`, `outdoorAmbient`, `fogColor`, `fogStart`, `fogEnd`, `exposureCompensation`, `globalShadows`, `sunDirection` e, quando existe, `atmosphere` com cor, decay, density, haze e glare. Gravações antigas sem esses campos usam valores de fallback no player.
+New captures store Lighting properties including `brightness`, `clockTime`, `ambient`, `outdoorAmbient`, `fogColor`, `fogStart`, `fogEnd`, `exposureCompensation`, `globalShadows`, `sunDirection`, and, when present, Atmosphere color, decay, density, haze, and glare. Older captures use viewer defaults for missing fields.
 
-`chunkIndex` começa em 0. O upload transmite texto JSON sem compactar novamente. O payload de captura pode trazer `frameBlocks:[{codec:"json"|"lz4",data,originalBytes?}]`; o servidor expande e persiste `frames[]`. Para compatibilidade, `codec:"lz4"` e `originalBytes` também são aceitos no bloco de transporte POST. Blocos de um `uploadId` devem concordar em `serverId` e `totalChunks`; conteúdo repetido diferente gera 409. O payload completo exige `serverId`, `base.parts`, `frames` ordenados por `t` e `durationMs` válido.
+`chunkIndex` starts at 0. Upload chunks carry JSON text; frame compression is expanded on the server before persistence. A capture may include `frameBlocks:[{codec:"json"|"lz4",data,originalBytes?}]`; the transport also accepts legacy `codec:"lz4"` blocks. Chunks for one `uploadId` must agree on `serverId` and `totalChunks`; conflicting duplicate content returns 409. A complete replay requires `serverId`, `base.parts`, `frames` ordered by `t`, and a valid `durationMs`.
 
-Cada frame contém `t` em milissegundos e listas opcionais `a` (peças criadas), `u` (patches de peças existentes), `d` (IDs de peças removidas), `da` (decals criados), `du` (decals atualizados) e `dd` (IDs de decals removidos). Decals têm `id` estável e `partPath` com o ID da peça; `du` pode omitir propriedades sem apagá-las. Os campos de decal são `face`, `texture`, `transparency`, `color3`, `className` e `instancePath`. O patch de peça mantém propriedades omitidas. Para limpar `meshId` ou `textureId`, o gravador envia `""`; para limpar `meshScale`, `meshOffset` ou `surfaceAppearance`, envia `false`. O player interpreta esses valores como ausência do componente.
+Each frame has `t` in milliseconds and optional `a` (added parts), `u` (updates), `d` (removed part IDs), `da` (added decals), `du` (updated decals), and `dd` (removed decal IDs). Decals use stable `id` and `partPath` values; an update can omit properties to retain the previous value. To clear `meshId` or `textureId`, send an empty string. Send `false` to clear `meshScale`, `meshOffset`, or `surfaceAppearance`.
 
-JSON malformado, JSON de tipo diferente de objeto e `replayId` com codificação de URL inválida retornam 400. O teste de integração também verifica que o replay enviado continua disponível após reiniciar o processo Node.
+Malformed JSON, a non-object payload, and invalid URL-encoded `replayId` values return 400. Snapshots using the legacy `__transport:"compact-v1"` representation are expanded before persistence. Snapshot, thumbnail, and cleanup routes remain for older captures.
 
-Peças de cabeça em modelos com `Humanoid` podem incluir `characterName`, mesmo quando `path` é um ID estável como `part_9`. Um patch envia `characterName:""` se a peça deixa de representar a cabeça. O player mantém compatibilidade com caminhos `Workspace/...` antigos.
-
-Snapshots legados com `__transport:"compact-v1"` são expandidos antes de persistir. As rotas de snapshot, thumbnail e cleanup permanecem para compatibilidade com capturas antigas.
-
-Quando a URL pública não contém `127.0.0.1`, o servidor mostra no terminal um código numérico de 20 dígitos válido por 30 minutos e um resgate. O ticket dura 90 segundos, é de uso único e fica vinculado a `serverId` e ao IP; o token de upload dura uma hora com o mesmo vínculo. A API é local e sem contas; na LAN, a leitura de replays continua aberta a quem alcança o servidor. Use somente rede confiável.
+For non-loopback clients, the server prints a 20-digit login code in its terminal. The code expires after 30 minutes; its one-time ticket lasts 90 seconds and is bound to the server ID and client IP. The upload token lasts one hour with the same binding. The LAN API has no user accounts, and anyone who can reach the server can read the replay library. Keep it on a trusted network.

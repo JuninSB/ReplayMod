@@ -1,0 +1,14 @@
+interface:
+  display_name: Replay Mod Development
+  short_description: Product, UI, backend, and asset workflow guidance
+  default_prompt: Use $develop-web to work on Replay Mod with its repository
+    instructions, English developer docs, existing stack, and verification workflow.
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true

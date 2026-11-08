@@ -15,6 +15,8 @@
 
 `SERVER_WEBVIEW_DATA_DIR` holds user replay and snapshot data. `SERVER_WEBVIEW_CONTENT_DIR` holds user-provided content and the on-demand download cache at `cache/node/`. Neither directory is shipped. The default paths are `web/data/` and `content/`, and both are ignored by Git.
 
+`SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR` optionally points to an accessible Roblox client `content/` folder for `rbxasset://` references. Replay Mod does not download or package the Roblox Player. The Asset Delivery proxy resolves `rbxassetid://` references separately and caches permitted responses under the configured content directory. Read [asset delivery](asset-delivery.md) for formats and access boundaries.
+
 Do not commit downloaded Roblox assets, replay captures, credentials, build outputs, or `node_modules`. No Roblox physics simulation is attempted; playback reconstructs recorded state. Executor behavior and Roblox-side capture performance require an in-game test.
 
 ## Change guidance

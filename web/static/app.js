@@ -1915,7 +1915,7 @@ async function copyHoverInfo() {
   const mesh = hoveredMesh || pickMesh();
   const part = meshPartData(mesh);
   if (!part) {
-    snapshotMeta.textContent = "Nenhuma peça selecionada para copiar.";
+    snapshotMeta.textContent = "Select a part to copy.";
     return;
   }
   const payload = {
@@ -1933,13 +1933,13 @@ async function copyHoverInfo() {
     textureId: part.textureId || "",
   };
   const ok = await copyText(JSON.stringify(payload, null, 2));
-  snapshotMeta.textContent = ok ? `Copiado: ${payload.path || payload.name || "peça"}` : "Não foi possível copiar.";
+  snapshotMeta.textContent = ok ? `Copied: ${payload.path || payload.name || "part"}` : "Could not copy the part.";
 }
 
 function deleteHoveredPart() {
   const mesh = sourceOf(hoveredMesh || pickMesh());
   if (!mesh || !three) {
-    snapshotMeta.textContent = "Nenhuma peça selecionada para remover.";
+    snapshotMeta.textContent = "Select a part to remove.";
     return;
   }
   const idx = partMeshes.indexOf(mesh);
@@ -1971,7 +1971,7 @@ function deleteHoveredPart() {
     mesh.material.dispose();
   }
   hoveredMesh = null;
-  snapshotMeta.textContent = path ? `Peça removida da visualização: ${path}` : "Peça removida da visualização.";
+  snapshotMeta.textContent = path ? `Removed from the viewer: ${path}` : "Removed from the viewer.";
 }
 
 async function ensureThreeModules() {
@@ -2031,7 +2031,7 @@ async function ensurePostFX() {
 async function setupThree() {
   const depsReady = await ensureThreeModules();
   if (!depsReady) {
-    snapshotMeta.textContent = "Visualizador 3D indisponível. A biblioteca continua acessível.";
+    snapshotMeta.textContent = "The 3D viewer is unavailable. Your library is still accessible.";
     return false;
   }
   await ensureDDS();
@@ -3196,13 +3196,13 @@ function drawSnap(snapshot, opt = {}) {
 function renderDecalList(decals) {
   decalsData.innerHTML = "";
   if (decals.length === 0) {
-    decalsData.textContent = "Nenhum decal recebido.";
+    decalsData.textContent = "No decals were captured.";
     return;
   }
   for (const decal of decals.slice(0, 120)) {
     const card = document.createElement("div");
     card.className = "decal-card";
-    card.textContent = `${decal.partPath || "?"} | face=${faceName(decal.face)} | textura=${decal.texture || "?"}`;
+    card.textContent = `${decal.partPath || "?"} | face=${faceName(decal.face)} | texture=${decal.texture || "?"}`;
     decalsData.appendChild(card);
   }
 }
@@ -3216,7 +3216,7 @@ function renderSnapshot(snapshot) {
   const partCount = renderableParts.length;
   const decalCount = Array.isArray(snapshot.decals) ? snapshot.decals.length : 0;
 
-  snapshotMeta.textContent = `servidor: ${serverId} | placeId: ${placeId} | data: ${time} | peças: ${partCount} | decals: ${decalCount}`;
+  snapshotMeta.textContent = `server: ${serverId} | placeId: ${placeId} | date: ${time} | parts: ${partCount} | decals: ${decalCount}`;
   lightingData.textContent = safeJson(snapshot.lighting);
 
   const decals = Array.isArray(snapshot.decals) ? snapshot.decals : [];
@@ -3318,7 +3318,7 @@ async function downloadClientLogs() {
 async function downloadSnapshot() {
   const rowId = serverSelect.value;
   if (!rowId) {
-    snapshotMeta.textContent = curMode === "rep" ? "Selecione uma gravação." : "Selecione uma captura.";
+    snapshotMeta.textContent = curMode === "rep" ? "Select a replay." : "Select a snapshot.";
     return;
   }
 
@@ -3328,7 +3328,7 @@ async function downloadSnapshot() {
       : `/api/snapshot/latest?serverId=${encodeURIComponent(rowId)}`;
   const res = await fetch(url);
   if (!res.ok) {
-    throw new Error(`Falha ao baixar ${curMode === "rep" ? "a gravação" : "a captura"} (${res.status})`);
+    throw new Error(`Could not download the ${curMode === "rep" ? "replay" : "snapshot"} (${res.status}).`);
   }
 
   const row = await res.json();
@@ -3429,7 +3429,7 @@ function renderExplorer() {
   const roots = capturedRoots.length ? capturedRoots : buildSceneExplorer(latestSnapshot);
 
   if (!roots.length) {
-    explorerMeta.textContent = "Esta captura não contém objetos exploráveis.";
+    explorerMeta.textContent = "This snapshot has no objects to explore.";
     inspectorData.textContent = "{}";
     return;
   }
@@ -3438,8 +3438,8 @@ function renderExplorer() {
     ? toNum(latestSnapshot.explorer.nodeCount, 0)
     : countExplorerNodes(roots);
   explorerMeta.textContent = capturedRoots.length
-    ? `serviços: ${capturedRoots.length} · nós: ${nodeCount}`
-    : `${nodeCount} objetos registrados · ${curMode === "rep" ? "estado no ponto atual" : "árvore da captura"}`;
+    ? `services: ${capturedRoots.length} · nodes: ${nodeCount}`
+    : `${nodeCount} recorded objects · ${curMode === "rep" ? "state at the current time" : "snapshot tree"}`;
 
   for (const root of roots) {
     const nodeEl = buildNodeElement(root, 0, filter);
@@ -3447,7 +3447,7 @@ function renderExplorer() {
   }
 
   if (!explorerTree.firstChild) {
-    explorerTree.textContent = "Nenhum item corresponde à busca.";
+    explorerTree.textContent = "No items match your search.";
   }
 }
 
@@ -3552,7 +3552,7 @@ async function loadServers() {
   addClientLog("info", "loading servers");
   const previous = serverSelect.value;
   const res = await fetch(`/api/servers?t=${Date.now()}`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Não foi possível carregar as capturas.");
+  if (!res.ok) throw new Error("Could not load snapshots.");
 
   const data = await res.json();
   servers = data.servers || [];
@@ -3561,7 +3561,7 @@ async function loadServers() {
   if (servers.length === 0) {
     const option = document.createElement("option");
     option.value = "";
-    option.textContent = "Nenhuma captura";
+    option.textContent = "No snapshots";
     serverSelect.appendChild(option);
     return;
   }
@@ -3585,7 +3585,7 @@ async function loadReplays() {
   addClientLog("info", "loading replays");
   const previous = serverSelect.value;
   const res = await fetch(`/api/replays?t=${Date.now()}`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Não foi possível carregar as gravações.");
+  if (!res.ok) throw new Error("Could not load replays.");
 
   const data = await res.json();
   replays = Array.isArray(data.replays) ? data.replays : [];
@@ -3594,7 +3594,7 @@ async function loadReplays() {
   if (replays.length === 0) {
     const option = document.createElement("option");
     option.value = "";
-    option.textContent = "Nenhuma gravação";
+    option.textContent = "No replays";
     serverSelect.appendChild(option);
     return;
   }
@@ -3616,13 +3616,13 @@ async function loadReplays() {
 }
 
 function applyModeUi() {
-  if (panelTitle) panelTitle.textContent = curMode === "rep" ? "Gravação" : "Captura";
-  if (landingTitle) landingTitle.textContent = curMode === "rep" ? "Suas gravações" : "Suas cenas";
+  if (panelTitle) panelTitle.textContent = curMode === "rep" ? "Replay Explorer" : "Snapshot Explorer";
+  if (landingTitle) landingTitle.textContent = curMode === "rep" ? "Your replays" : "Your snapshots";
   if (landingSub) {
     landingSub.textContent =
       curMode === "rep"
-        ? "Reproduza uma sessão, ajuste a velocidade e explore cada momento em 3D."
-        : "Explore os objetos, as texturas e a iluminação de cada captura.";
+        ? "Play a session, change playback speed, and explore every moment in 3D."
+        : "Explore the objects, textures, and lighting in each snapshot.";
   }
   syncLibraryTabs();
 }
@@ -3665,7 +3665,7 @@ function renderServerCards() {
     if (!Array.isArray(replays) || replays.length === 0) {
       const empty = document.createElement("div");
       empty.className = "meta";
-      empty.textContent = "Nenhuma gravação ainda. Inicie uma captura no gravador e envie seu primeiro replay.";
+      empty.textContent = "No replays yet. Start a capture in the Roblox recorder and send your first replay.";
       serverCards.appendChild(empty);
       return;
     }
@@ -3683,10 +3683,10 @@ function renderServerCards() {
       meta.className = "server-card-meta";
       const nm = document.createElement("div");
       nm.className = "server-card-name";
-      nm.textContent = String(r.replayName || r.replayId || "Gravação");
+      nm.textContent = String(r.replayName || r.replayId || "Replay");
       const sub = document.createElement("div");
       sub.className = "server-card-sub";
-      sub.textContent = `${fmtMs(r.durationMs)} · ${r.chatCount ?? 0} mensagens · ${r.placeId ?? "Local"}`;
+      sub.textContent = `${fmtMs(r.durationMs)} · ${r.chatCount ?? 0} chat messages · ${r.placeId ?? "Local"}`;
       meta.appendChild(nm);
       meta.appendChild(sub);
       card.appendChild(img);
@@ -3703,7 +3703,7 @@ function renderServerCards() {
   if (!Array.isArray(servers) || servers.length === 0) {
     const empty = document.createElement("div");
     empty.className = "meta";
-    empty.textContent = "Nenhuma captura disponível.";
+    empty.textContent = "No snapshots available.";
     serverCards.appendChild(empty);
     return;
   }
@@ -3721,7 +3721,7 @@ function renderServerCards() {
     meta.className = "server-card-meta";
     const nm = document.createElement("div");
     nm.className = "server-card-name";
-    nm.textContent = String(s.serverName || s.serverId || "Servidor");
+    nm.textContent = String(s.snapshotName || s.serverName || s.serverId || "Snapshot");
     const sub = document.createElement("div");
     sub.className = "server-card-sub";
     sub.textContent = `${s.serverId || "?"} • placeId ${s.placeId ?? "-"}`;
@@ -3784,8 +3784,8 @@ function hintNth(itemId) {
   if (sid && thClsSet.has(sid)) return;
   showThnt(
     curMode === "rep"
-      ? "Esta gravação ainda não tem miniatura. Use Salvar miniatura da cena ou pressione Z."
-      : "Esta captura ainda não tem miniatura. Use Salvar miniatura da cena ou pressione Z.",
+      ? "This replay has no thumbnail yet. Select Save scene thumbnail or press Z."
+      : "This snapshot has no thumbnail yet. Select Save scene thumbnail or press Z.",
     "warn",
     7000
   );
@@ -3859,7 +3859,7 @@ async function upThumb() {
   if (!itemId || !three?.renderer || displayedSceneKey !== `${curMode}:${itemId}`) return;
   const row = curMode === "rep" ? findReplay(itemId) : findServer(itemId);
   if (row?.thumbnailUrl) {
-    showThnt(curMode === "rep" ? "Esta gravação já tem miniatura." : "Esta captura já tem miniatura.", "warn");
+    showThnt(curMode === "rep" ? "This replay already has a thumbnail." : "This snapshot already has a thumbnail.", "warn");
     return;
   }
   let imageData = "";
@@ -3871,11 +3871,11 @@ async function upThumb() {
     }
     imageData = three.renderer.domElement.toDataURL("image/jpeg", 0.82);
   } catch {
-    showThnt("Não foi possível criar a miniatura.", "err");
+    showThnt("Could not create the thumbnail.", "err");
     return;
   }
   if (!imageData || imageData === "data:," || imageData.length < 128) {
-    showThnt("Não foi possível criar a miniatura.", "err");
+    showThnt("Could not create the thumbnail.", "err");
     return;
   }
   try {
@@ -3888,9 +3888,9 @@ async function upThumb() {
     if (!res.ok) {
       const msg = String(body?.error || "").toLowerCase();
       if (res.status === 409 || msg.includes("already has")) {
-        showThnt(curMode === "rep" ? "Esta gravação já tem miniatura." : "Esta captura já tem miniatura.", "warn");
+        showThnt(curMode === "rep" ? "This replay already has a thumbnail." : "This snapshot already has a thumbnail.", "warn");
       } else {
-        showThnt("Falha ao enviar a miniatura.", "err");
+        showThnt("Could not upload the thumbnail.", "err");
       }
       return;
     }
@@ -3904,9 +3904,9 @@ async function upThumb() {
     thClsSet.delete(itemId);
     renderServerCards();
     syncThnt();
-    showThnt(curMode === "rep" ? "Miniatura da gravação salva." : "Miniatura da captura salva.", "ok");
+    showThnt(curMode === "rep" ? "Replay thumbnail saved." : "Snapshot thumbnail saved.", "ok");
   } catch {
-    showThnt("Falha ao enviar a miniatura.", "err");
+    showThnt("Could not upload the thumbnail.", "err");
   }
 }
 
@@ -4179,7 +4179,7 @@ function repChatDraw() {
   const pick = repDat.chat.slice(Math.max(0, count - 45), count);
   replayChat.innerHTML = "";
   if (pick.length === 0) {
-    replayChat.textContent = "Nenhuma mensagem neste momento.";
+    replayChat.textContent = "No chat messages at this time.";
     return;
   }
   for (const c of pick) {
@@ -4202,7 +4202,7 @@ function repMeta() {
   const decals = repDat.decalMap.size;
   snapshotMeta.textContent =
     `replayId: ${raw.replayId || "-"} | placeId: ${raw.placeId || "-"} | ` +
-    `time: ${fmtMs(repMs)} / ${fmtMs(repDat.dur)} | captura: ${raw.captureFps || "?"} ticks/s | velocidade: ${repSpeed}× | partes: ${bps} | decals: ${decals} | quadros: ${frm} | chat: ${chat}`;
+    `time: ${fmtMs(repMs)} / ${fmtMs(repDat.dur)} | capture: ${raw.captureFps || "?"} ticks/s | speed: ${repSpeed}× | parts: ${bps} | decals: ${decals} | frames: ${frm} | chat: ${chat}`;
 }
 
 function repUiSync() {
@@ -4212,7 +4212,7 @@ function repUiSync() {
     replaySeek.value = String(Math.floor(repMs));
   }
   if (replayTime) replayTime.textContent = `${fmtMs(repMs)} / ${fmtMs(repDat.dur)}`;
-  if (replayPlayBtn) replayPlayBtn.textContent = repRun ? "Pausar" : "Reproduzir";
+  if (replayPlayBtn) replayPlayBtn.textContent = repRun ? "Pause" : "Play";
 }
 
 function repDraw(force = false) {
@@ -4324,13 +4324,13 @@ async function loadReplay() {
   if (saveThumbnailBtn) saveThumbnailBtn.disabled = true;
   const replayId = String(serverSelect?.value || "");
   addClientLog("info", "loading replay", { replayId });
-  setRenderStatus("Carregando...");
+  setRenderStatus("Loading…");
   if (!replayId) {
     repUi(false);
-    snapshotMeta.textContent = "Selecione uma gravação.";
+    snapshotMeta.textContent = "Select a replay.";
     drawEmpty();
     explorerTree.innerHTML = "";
-    explorerMeta.textContent = "Nenhuma árvore carregada.";
+    explorerMeta.textContent = "No object tree loaded.";
     inspectorData.textContent = "{}";
     setRenderStatus("");
     return;
@@ -4342,7 +4342,7 @@ async function loadReplay() {
   );
   if (!res.ok) {
     repUi(false);
-    snapshotMeta.textContent = "Não foi possível carregar a gravação.";
+    snapshotMeta.textContent = "Could not load the replay.";
     drawEmpty();
     setRenderStatus("");
     return;
@@ -4354,7 +4354,7 @@ async function loadReplay() {
   lightingData.textContent = safeJson(rep?.base?.lighting || rep?.lighting || {});
   decalsData.innerHTML = "";
   explorerTree.innerHTML = "";
-  explorerMeta.textContent = "A árvore do Explorer não está disponível nesta gravação.";
+  explorerMeta.textContent = "The object tree is not available in this replay.";
   inspectorData.textContent = safeJson({
     replayName: rep?.replayName || "",
     durationMs: rep?.durationMs ?? rep?.durMs ?? 0,
@@ -4366,7 +4366,7 @@ async function loadReplay() {
   onResize();
   shdReady = false;
   apShMode();
-  setRenderStatus("Preparando a cena 3D...");
+  setRenderStatus("Preparing the 3D scene…");
   repLoad(rep);
   displayedSceneKey = `rep:${replayId}`;
   if (three?.renderer && three?.scene && three?.camera) {
@@ -4410,12 +4410,12 @@ async function loadSnapshot() {
   repUi(false);
   const serverId = serverSelect.value;
   addClientLog("info", "loading snapshot", { serverId });
-  setRenderStatus("Carregando...");
+  setRenderStatus("Loading…");
   if (!serverId) {
-    snapshotMeta.textContent = "Selecione uma captura.";
+    snapshotMeta.textContent = "Select a snapshot.";
     drawEmpty();
     explorerTree.innerHTML = "";
-    explorerMeta.textContent = "Nenhuma árvore carregada.";
+    explorerMeta.textContent = "No object tree loaded.";
     inspectorData.textContent = "{}";
     setRenderStatus("");
     return;
@@ -4426,7 +4426,7 @@ async function loadSnapshot() {
     { cache: "no-store" }
   );
   if (!res.ok) {
-    snapshotMeta.textContent = "Não foi possível carregar a captura.";
+    snapshotMeta.textContent = "Could not load the snapshot.";
     drawEmpty();
     addClientLog("warn", "snapshot request failed", { serverId, status: res.status });
     setRenderStatus("");
@@ -4439,7 +4439,7 @@ async function loadSnapshot() {
   onResize();
   shdReady = false;
   apShMode();
-  setRenderStatus("Preparando a cena 3D...");
+  setRenderStatus("Preparing the 3D scene…");
   renderSnapshot(snapshot);
   displayedSceneKey = `snap:${serverId}`;
   if (three?.renderer && three?.scene && three?.camera) {
@@ -4477,7 +4477,7 @@ async function bootstrap() {
   wireDebugMenu();
   addClientLog("info", "bootstrap started");
   const threeReady = await setupThree();
-  if (!threeReady) document.getElementById("appStatus").textContent = "Renderizador 3D indisponível. Verifique a conexão e o suporte a WebGL.";
+  if (!threeReady) document.getElementById("appStatus").textContent = "The 3D renderer is unavailable. Check your connection and WebGL support.";
   if (threeReady) {
     onResize();
     drawEmpty();
@@ -4489,8 +4489,8 @@ async function bootstrap() {
     const opened = await openShared();
     if (!opened) showLanding();
   } catch (error) {
-    document.getElementById("appStatus").textContent = `Não foi possível carregar: ${error.message}`;
-    snapshotMeta.textContent = `Erro: ${error.message}`;
+    document.getElementById("appStatus").textContent = `Could not load the viewer: ${error.message}`;
+    snapshotMeta.textContent = `Error: ${error.message}`;
     addClientLog("error", "bootstrap failed", { message: error.message, stack: error.stack });
   }
 }
@@ -4498,7 +4498,7 @@ async function bootstrap() {
 function syncFullscreenBtn() {
   if (!fullscreenBtn) return;
   const active = document.fullscreenElement === document.documentElement;
-  fullscreenBtn.textContent = active ? "Sair da tela cheia" : "Tela cheia";
+  fullscreenBtn.textContent = active ? "Exit fullscreen" : "Fullscreen";
 }
 
 function curShareUrl() {
@@ -4515,12 +4515,12 @@ function curShareUrl() {
 async function copyShareUrl() {
   const id = String(serverSelect?.value || "").trim();
   if (!id) {
-    snapshotMeta.textContent = curMode === "rep" ? "Selecione uma gravação." : "Selecione uma captura.";
+    snapshotMeta.textContent = curMode === "rep" ? "Select a replay." : "Select a snapshot.";
     return false;
   }
   const link = curShareUrl();
   const ok = await copyText(link);
-  snapshotMeta.textContent = ok ? "Link de compartilhamento copiado." : "Não foi possível copiar o link.";
+  snapshotMeta.textContent = ok ? "Share link copied." : "Could not copy the share link.";
   addClientLog(ok ? "info" : "warn", "share link", { mode: curMode, id, link, ok });
   return ok;
 }
@@ -4569,7 +4569,7 @@ function setSidebarView(view) {
   for (const button of document.querySelectorAll("[data-sidebar-view]")) {
     button.setAttribute("aria-pressed", String(button.dataset.sidebarView === (showExplorer ? "explorer" : "details")));
   }
-  if (panelTitle) panelTitle.textContent = showExplorer ? "Replay Explorer" : "Detalhes da cena";
+  if (panelTitle) panelTitle.textContent = showExplorer ? "Replay Explorer" : "Scene details";
 }
 
 function syncLibraryTabs() {
@@ -4619,7 +4619,7 @@ function syncSettingsUi() {
   if (setFovValue) setFovValue.textContent = String(Math.round(toNum(camCfg.fov, 55)));
   if (setCamSens) setCamSens.value = String(Math.round(Math.max(20, Math.min(300, camCfg.sensitivityMult * 100))));
   if (setCamSensValue) setCamSensValue.textContent = `${camCfg.sensitivityMult.toFixed(2)}x`;
-  if (setLookBtn) setLookBtn.textContent = `Botão de olhar: ${camCfg.lookButton === "RMB" ? "direito" : "esquerdo"}`;
+  if (setLookBtn) setLookBtn.textContent = `Look button: ${camCfg.lookButton === "RMB" ? "right" : "left"}`;
 }
 
 function setDebugMenuOpen(open) {
@@ -4786,7 +4786,7 @@ function wireDebugMenu() {
     setLookBtn.addEventListener("click", () => {
       camCfg.lookButton = camCfg.lookButton === "RMB" ? "LMB" : "RMB";
       cameraLookButton = camCfg.lookButton;
-      setLookBtn.textContent = `Botão de olhar: ${camCfg.lookButton === "RMB" ? "direito" : "esquerdo"}`;
+      setLookBtn.textContent = `Look button: ${camCfg.lookButton === "RMB" ? "right" : "left"}`;
     });
   }
 }
@@ -4802,7 +4802,7 @@ refreshBtn.addEventListener("click", async () => {
     }
     addClientLog("info", "list refreshed", { mode: curMode });
   } catch (error) {
-    snapshotMeta.textContent = `Erro ao atualizar: ${error.message}`;
+    snapshotMeta.textContent = `Refresh failed: ${error.message}`;
     addClientLog("error", "manual refresh failed", { message: error.message, stack: error.stack });
   }
 });
@@ -4820,7 +4820,7 @@ if (modeSelect) {
       await loadList();
       showLanding();
     } catch (error) {
-      snapshotMeta.textContent = `Erro ao trocar o modo: ${error.message}`;
+      snapshotMeta.textContent = `Could not change viewer mode: ${error.message}`;
       addClientLog("error", "mode switch failed", { message: error.message, stack: error.stack });
     }
   });
@@ -4868,7 +4868,7 @@ if (downloadSnapshotBtn) {
     try {
       await downloadSnapshot();
     } catch (error) {
-      snapshotMeta.textContent = `Erro ao baixar a captura: ${error.message}`;
+      snapshotMeta.textContent = `Could not download the snapshot: ${error.message}`;
       addClientLog("error", "snapshot download failed", { message: error.message, stack: error.stack });
     }
   });
@@ -4990,7 +4990,7 @@ for (const button of libraryTabs?.querySelectorAll("[data-library-mode]") || [])
     } else {
       curMode = nextMode;
       loadList().then(showLanding).catch((error) => {
-        snapshotMeta.textContent = `Erro ao trocar a biblioteca: ${error.message}`;
+        snapshotMeta.textContent = `Could not change the library: ${error.message}`;
       });
     }
     syncLibraryTabs();
@@ -5041,6 +5041,6 @@ function applyRecordedCamera() {
 document.getElementById("replayCamera")?.addEventListener("click", (event) => {
   followRecordedCamera = !followRecordedCamera;
   event.currentTarget.setAttribute("aria-pressed", String(followRecordedCamera));
-  event.currentTarget.textContent = followRecordedCamera ? "Câmera gravada" : "Câmera livre";
+  event.currentTarget.textContent = followRecordedCamera ? "Recorded camera" : "Free camera";
   if (repDat) repDraw(true);
 });
