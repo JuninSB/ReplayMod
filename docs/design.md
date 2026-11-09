@@ -34,4 +34,6 @@ Share opens a dialog with Copy link and Download offline HTML. Export progress a
 
 ## Collapsed scene menu and loading
 
+The viewer opens a single responsive sidebar with Scene, Rendering, Camera, Explorer and Details tabs. The scene remains visible behind it; each tab owns its controls and the panel closes with the close button or Escape. Rendering separates shadow map quality, distance, update rate and filtering, and offers an explicit render-resolution setting. Reduced resolution and low shadow quality are opt-in.
+
 The viewer header has one Menu button. Explorer, thumbnail capture, rendering settings, camera settings, sharing and library controls stay collapsed until opened. FPS appears separately below the header. Movement help is removed. Player nameplates use outlined text without a box, a maximum on-screen size and recorded distance limits. The loading panel reports meshes and textures, retains an expandable list of failures and retries only failed jobs. Successful resources are reused across scene rebuilds. Compact mobile viewports use a lower internal render resolution and only run post-processing when a recorded effect needs it. See [rendering compatibility](rendering.md) for capture fields and approximations.

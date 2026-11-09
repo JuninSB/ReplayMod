@@ -1137,6 +1137,33 @@ body.is-viewer .camera-help {
   z-index: 6 !important;
   font-size: 11px !important;
 }
+/* A single sidebar replaces the overlapping settings popovers. */
+body.is-viewer .viewer-sidebar {
+  top: max(8px, env(safe-area-inset-top));
+  bottom: max(8px, env(safe-area-inset-bottom));
+  right: max(8px, env(safe-area-inset-right));
+  width: min(370px, calc(100vw - 16px));
+  padding: 12px;
+}
+body.is-viewer .sidebar-nav { overflow-x: auto; flex-shrink: 0; }
+body.is-viewer .sidebar-nav button { flex: 0 0 auto; padding: 6px 9px; font-size: 12px; }
+body.is-viewer #sidebarScenePane .viewer-menu {
+  position: static; width: auto; max-height: none; overflow: visible;
+  background: transparent; border: 0; padding: 0; border-radius: 0;
+}
+body.is-viewer #sidebarScenePane .viewer-menu[hidden] { display: none; }
+body.is-viewer #sidebarRenderingPane .debug-menu,
+body.is-viewer #sidebarCameraPane .debug-menu {
+  position: static; width: auto; max-height: none; overflow: visible;
+  box-shadow: none; border: 0; background: transparent; padding: 0;
+}
+body.is-viewer #sidebarRenderingPane .debug-item,
+body.is-viewer #sidebarCameraPane .debug-item { min-height: 40px; }
+body.is-viewer #sidebarScenePane #sidebarToggleBtn,
+body.is-viewer #sidebarScenePane #debugBtn,
+body.is-viewer #sidebarScenePane #settingsBtn { display: none !important; }
+body.is-viewer #sidebarScenePane .debug-wrap,
+body.is-viewer #sidebarScenePane .settings-wrap { display: none !important; }
 .asset-progress {
   position: absolute;
   top: 54px;

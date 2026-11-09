@@ -237,6 +237,9 @@ const dbg = {
   smoothLighting: true,
   sceneBrightness: 1,
   shadowRange: "medium",
+  shadowQuality: "balanced",
+  shadowUpdateRate: "live",
+  renderScale: "auto",
   showFps: false,
   texturesOn: true,
   fogOn: true,
@@ -722,9 +725,7 @@ function apShdwMd() {
   three.dir.shadow.camera.layers.enable(1);
   renderer.shadowMap.type = dbg.smoothShadows ? THREE.PCFShadowMap : THREE.BasicShadowMap;
   const mobile = viewport?.clientWidth < 700;
-  const preferredSize = mobile
-    ? (dbg.smoothShadows ? 1024 : 768)
-    : (dbg.smoothShadows ? 2048 : 1024);
+  const preferredSize = ({ low: 512, balanced: mobile ? 1024 : 2048, high: mobile ? 2048 : 4096 })[dbg.shadowQuality] || 1024;
   const targetShadowSize = Math.min(preferredSize, renderer.capabilities?.maxTextureSize || preferredSize);
   const currentSize = Number(three.dir.shadow?.mapSize?.width || 0);
   if (currentSize !== targetShadowSize) {
@@ -734,8 +735,9 @@ function apShdwMd() {
   }
   if (dbg.smoothShadows) {
     const softness = Math.max(0, Math.min(1, toNum(latestSnapshot?.lighting?.shadowSoftness, 0.5)));
-    const qualityBlur = { near: 1.4, medium: 1, far: 0.8 }[dbg.shadowRange] || 1;
-    three.dir.shadow.radius = (0.5 + softness * 4) * qualityBlur;
+    const rangeBlur = { near: 1.4, medium: 1, far: 0.8 }[dbg.shadowRange] || 1;
+    const mapBlur = dbg.shadowQuality === 'low' ? 2 : 1;
+    three.dir.shadow.radius = (0.5 + softness * 4) * rangeBlur * mapBlur;
   } else {
     three.dir.shadow.radius = 0;
   }
@@ -753,6 +755,7 @@ function apShdwMd() {
 
 function scenePixelRatio(width = viewport?.clientWidth || window.innerWidth || 1280) {
   const deviceRatio = Number(window.devicePixelRatio) || 1;
+  if (dbg.renderScale !== 'auto') return Math.min(deviceRatio, Number(dbg.renderScale) || 1);
   // A high-density phone at 2× or 3× makes every scene, shadow map and post
   // pass render several times more pixels. Keep the interactive viewer at a
   // stable mobile budget; desktop can still use a little extra sharpness.
@@ -937,7 +940,7 @@ function wireClientLoggers() {
   document.addEventListener('change', event => {
     const element = event.target;
     if (!element?.id) return;
-    const allowed = new Set(['shadowRange', 'sceneBrightness', 'setFov', 'setCamSens', 'modeSelect', 'replaySeek', 'dbgShaders', 'dbgSmoothLighting', 'dbgSmoothShadows', 'dbgFps', 'dbgTextures', 'dbgFog', 'dbgCulling', 'dbgPlayerLabels', 'dbgMeshBoxes', 'dbgFxPlaceholders', 'dbgWireframe', 'replaySpeed']);
+    const allowed = new Set(['shadowRange', 'shadowQuality', 'shadowUpdateRate', 'sceneBrightness', 'setFov', 'setCamSens', 'modeSelect', 'replaySeek', 'dbgShaders', 'dbgSmoothLighting', 'dbgSmoothShadows', 'dbgFps', 'dbgTextures', 'dbgFog', 'dbgCulling', 'dbgPlayerLabels', 'dbgMeshBoxes', 'dbgFxPlaceholders', 'dbgWireframe', 'replaySpeed']);
     if (allowed.has(element.id)) recordViewerDiagnostic('setting', `${element.id}=${element.type === 'checkbox' ? Boolean(element.checked) : String(element.value).slice(0, 20)}`);
   });
   recordViewerDiagnostic('session', `started viewport=${window.innerWidth}x${window.innerHeight} pixelRatio=${window.devicePixelRatio || 1}`);
@@ -2971,18 +2974,28 @@ function syncRecordedSky(settings) {
 }
 
 function updateShadowCoverage(now = 0, force = false) {
-  if (!three?.dir || !three?.camera || !skyState || (!force && now - shadowCoverageAt < 400)) return;
+  const interval = dbg.shadowUpdateRate === 'economy' ? 250 : 50;
+  if (!three?.dir || !three?.camera || !skyState || (!force && now - shadowCoverageAt < interval)) return;
   shadowCoverageAt = now;
   const camera = three.camera;
   const range = shadowRange(dbg.shadowRange);
-  const forward = new THREE.Vector3(); camera.getWorldDirection(forward);
-  const target = camera.position.clone().addScaledVector(forward, Math.min(range * 0.2, 30));
-  const moveThreshold = Math.max(2, range / 24);
+  const texel = 2 * range / Math.max(1, three.dir.shadow.mapSize.width);
+  const target = camera.position.clone();
+  target.set(Math.round(target.x / texel) * texel, Math.round(target.y / texel) * texel, Math.round(target.z / texel) * texel);
+  const moveThreshold = texel * 0.5;
   const prior = shadowCoverageState;
   const targetMoved = !prior || prior.target.distanceToSquared(target) >= moveThreshold * moveThreshold;
   const sunChanged = !prior || prior.sun.angleTo(skyState.sunVector) > 0.002;
   const rangeChanged = !prior || prior.range !== range;
   const needsShadowUpdate = force || shadowSceneDirty || targetMoved || sunChanged || rangeChanged;
+  if (needsShadowUpdate) {
+    for (const mesh of partMeshes) {
+      if (!mesh?.userData?.part || !mesh.position) continue;
+      const cast = partCastsNearby(mesh.userData.part, mesh.position, camera.position, dbg.shadowRange);
+      mesh.castShadow = cast;
+      for (const chunk of mesh.userData.chunkMeshes || []) chunk.castShadow = cast;
+    }
+  }
   const shadowCamera = three.dir.shadow.camera;
   if (rangeChanged) {
     shadowCamera.left = -range; shadowCamera.right = range; shadowCamera.top = range; shadowCamera.bottom = -range;
@@ -2996,12 +3009,6 @@ function updateShadowCoverage(now = 0, force = false) {
     if (three.renderer.shadowMap) three.renderer.shadowMap.needsUpdate = true;
     shadowCoverageState = { target: target.clone(), sun: skyState.sunVector.clone(), range };
     shadowSceneDirty = false;
-  }
-  for (const mesh of partMeshes) {
-    if (!mesh?.userData?.part || !mesh.position) continue;
-    const cast = partCastsNearby(mesh.userData.part, mesh.position, camera.position, dbg.shadowRange);
-    mesh.castShadow = cast;
-    for (const chunk of mesh.userData.chunkMeshes || []) chunk.castShadow = cast;
   }
 }
 
@@ -4365,6 +4372,7 @@ function repDel(path) {
   const k = String(path || "");
   const mesh = partByPath.get(k);
   if (!mesh || !three) return;
+  if (mesh.castShadow) shadowSceneDirty = true;
   if (mesh.userData.part?.lights?.length) replayLightsDirty = true;
   for (let i = decalPlanes.length - 1; i >= 0; i -= 1) {
     if (decalPlanes[i].parent === mesh) disposeDecalPlane(decalPlanes[i]);
@@ -4399,6 +4407,7 @@ function repAdd(p, idx) {
     repDel(k);
   }
   const mesh = buildPartMesh(p, idx);
+  if (mesh.castShadow) shadowSceneDirty = true;
   mesh.userData.part = p;
   three.scene.add(mesh);
   partMeshes.push(mesh);
@@ -4799,7 +4808,10 @@ function onResize() {
   const w = Math.max(320, viewport.clientWidth);
   const h = Math.max(220, viewport.clientHeight);
   const ratio = scenePixelRatio(w);
-  if (three.renderer.getPixelRatio() !== ratio) three.renderer.setPixelRatio(ratio);
+  if (three.renderer.getPixelRatio() !== ratio) {
+    three.renderer.setPixelRatio(ratio);
+    three.composer?.setPixelRatio?.(ratio);
+  }
   three.renderer.setSize(w, h);
   if (three.composer?.setSize) three.composer.setSize(w, h);
   if (three.bloom?.setSize) three.bloom.setSize(w, h);
@@ -4916,18 +4928,19 @@ function setSidebarOpen(open) {
   document.body.classList.toggle("sidebar-open", next);
   viewerSidebar.inert = !next;
   sidebarToggleBtn.setAttribute("aria-expanded", String(next));
+  document.getElementById('viewerMenuBtn')?.setAttribute('aria-expanded', String(next));
   if (next) sidebarCloseBtn?.focus({ preventScroll: true });
   else if (wasOpen) document.getElementById("viewerMenuBtn")?.focus({ preventScroll: true });
 }
 
 function setSidebarView(view) {
-  const showExplorer = view !== "details";
-  if (sidebarExplorerPane) sidebarExplorerPane.hidden = !showExplorer;
-  if (sidebarDetailsPane) sidebarDetailsPane.hidden = showExplorer;
+  const panes = { scene: document.getElementById('sidebarScenePane'), rendering: document.getElementById('sidebarRenderingPane'), camera: document.getElementById('sidebarCameraPane'), explorer: sidebarExplorerPane, details: sidebarDetailsPane };
+  if (!panes[view]) view = 'scene';
+  for (const [name, pane] of Object.entries(panes)) if (pane) pane.hidden = name !== view;
   for (const button of document.querySelectorAll("[data-sidebar-view]")) {
-    button.setAttribute("aria-pressed", String(button.dataset.sidebarView === (showExplorer ? "explorer" : "details")));
+    button.setAttribute("aria-pressed", String(button.dataset.sidebarView === view));
   }
-  if (panelTitle) panelTitle.textContent = showExplorer ? "Replay Explorer" : "Scene details";
+  if (panelTitle) panelTitle.textContent = ({ scene: 'Scene', rendering: 'Rendering', camera: 'Camera', explorer: 'Explorer', details: 'Details' })[view];
 }
 
 function syncLibraryTabs() {
@@ -4937,12 +4950,10 @@ function syncLibraryTabs() {
 }
 
 function setViewerMenuOpen(open) {
-  const menu = document.getElementById("viewerMenu");
   const button = document.getElementById("viewerMenuBtn");
-  if (!menu || !button) return;
-  menu.hidden = !open;
-  button.setAttribute("aria-expanded", String(open));
-  if (!open) { setDebugMenuOpen(false); setSettingsMenuOpen(false); }
+  if (button) button.setAttribute("aria-expanded", String(Boolean(open)));
+  if (open) setSidebarView('scene');
+  setSidebarOpen(open);
 }
 
 function updateTopbarMode() {
@@ -4991,13 +5002,11 @@ function syncSettingsUi() {
 
 function setDebugMenuOpen(open) {
   if (!debugMenu || !debugBtn) return;
-  debugMenu.hidden = !open;
   debugBtn.setAttribute("aria-expanded", open ? "true" : "false");
 }
 
 function setSettingsMenuOpen(open) {
   if (!settingsMenu || !settingsBtn) return;
-  settingsMenu.hidden = !open;
   settingsBtn.setAttribute("aria-expanded", open ? "true" : "false");
 }
 function wireDebugMenu() {
@@ -5008,25 +5017,14 @@ function wireDebugMenu() {
 
   debugBtn.addEventListener("click", (event) => {
     event.preventDefault();
-    setSettingsMenuOpen(false);
-    setDebugMenuOpen(debugMenu.hidden);
+    setSidebarView('rendering');
+    setSidebarOpen(true);
   });
   settingsBtn.addEventListener("click", (event) => {
     event.preventDefault();
-    setDebugMenuOpen(false);
-    setSettingsMenuOpen(settingsMenu.hidden);
+    setSidebarView('camera');
+    setSidebarOpen(true);
   });
-
-  const onDocClick = (event) => {
-    const t = event.target;
-    if (!debugMenu.contains(t) && !debugBtn.contains(t)) {
-      setDebugMenuOpen(false);
-    }
-    if (!settingsMenu.contains(t) && !settingsBtn.contains(t)) {
-      setSettingsMenuOpen(false);
-    }
-  };
-  document.addEventListener("click", onDocClick);
   window.addEventListener("keydown", (event) => {
     if (event.code === "Escape") {
       setDebugMenuOpen(false);
@@ -5044,6 +5042,20 @@ function wireDebugMenu() {
     dbg.shadowRange = event.target.value;
     apShdwMd();
     updateShadowCoverage(performance.now(), true);
+  });
+  document.getElementById('shadowQuality')?.addEventListener('change', event => {
+    dbg.shadowQuality = event.target.value;
+    apShdwMd();
+    shadowCoverageState = null;
+    updateShadowCoverage(performance.now(), true);
+  });
+  document.getElementById('shadowUpdateRate')?.addEventListener('change', event => {
+    dbg.shadowUpdateRate = event.target.value;
+    updateShadowCoverage(performance.now(), true);
+  });
+  document.getElementById('renderScale')?.addEventListener('change', event => {
+    dbg.renderScale = event.target.value;
+    onResize();
   });
   document.getElementById("sceneBrightness")?.addEventListener("input", event => {
     dbg.sceneBrightness = Math.max(0.5, Math.min(3, Number(event.target.value) || 1));
@@ -5396,7 +5408,7 @@ if (homeBtn) {
 }
 
 document.getElementById("viewerMenuBtn")?.addEventListener("click", () => {
-  setViewerMenuOpen(document.getElementById("viewerMenu").hidden);
+  setViewerMenuOpen(!document.body.classList.contains('sidebar-open'));
 });
 function setUiHidden(hidden) {
   if (hidden) { setViewerMenuOpen(false); setSidebarOpen(false); }
@@ -5409,10 +5421,6 @@ document.getElementById("assetStatusBtn")?.addEventListener("click", () => {
   assetProgressDismissed = false;
   setViewerMenuOpen(false);
   renderAssetProgress();
-});
-document.addEventListener("click", event => {
-  const menu = document.getElementById("viewerMenu");
-  if (menu && !menu.hidden && !menu.contains(event.target) && !document.getElementById("viewerMenuBtn")?.contains(event.target)) setViewerMenuOpen(false);
 });
 document.getElementById("mobileToolsBtn")?.addEventListener("click", () => {
   const tools = document.getElementById("toolbarExtras");
@@ -5428,8 +5436,8 @@ window.addEventListener("keydown", (event) => {
 });
 
 sidebarToggleBtn?.addEventListener("click", () => {
-  setViewerMenuOpen(false);
-  setSidebarOpen(!document.body.classList.contains("sidebar-open"));
+  setSidebarView('explorer');
+  setSidebarOpen(true);
 });
 sidebarCloseBtn?.addEventListener("click", () => setSidebarOpen(false));
 for (const button of document.querySelectorAll("[data-sidebar-view]")) {
@@ -5450,7 +5458,13 @@ for (const button of libraryTabs?.querySelectorAll("[data-library-mode]") || [])
     syncLibraryTabs();
   });
 }
-setSidebarView("explorer");
+document.getElementById('sidebarScenePane')?.appendChild(document.getElementById('viewerMenu'));
+document.getElementById('sidebarRenderingPane')?.appendChild(debugMenu);
+document.getElementById('sidebarCameraPane')?.appendChild(settingsMenu);
+document.getElementById('viewerMenu').hidden = false;
+debugMenu.hidden = false;
+settingsMenu.hidden = false;
+setSidebarView("scene");
 
 updateTopbarMode();
 bootstrap();

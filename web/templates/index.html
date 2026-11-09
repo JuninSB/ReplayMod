@@ -90,6 +90,15 @@
             </button>
             <div id="debugMenu" class="debug-menu" hidden>
             <label class="debug-item debug-range">
+              <span>Render resolution</span>
+              <select id="renderScale" aria-label="Render resolution">
+                <option value="auto" selected>Automatic</option>
+                <option value="0.75">Reduced</option>
+                <option value="1">1×</option>
+                <option value="1.5">1.5×</option>
+              </select>
+            </label>
+            <label class="debug-item debug-range">
               <span>Scene brightness</span>
               <input id="sceneBrightness" type="range" min="0.5" max="3" step="0.05" value="1" />
               <span id="sceneBrightnessValue">1.00×</span>
@@ -100,6 +109,21 @@
                 <option value="near">Near</option>
                 <option value="medium" selected>Medium</option>
                 <option value="far">Far</option>
+              </select>
+            </label>
+            <label class="debug-item debug-range">
+              <span>Shadow quality</span>
+              <select id="shadowQuality" aria-label="Shadow quality">
+                <option value="low">Low</option>
+                <option value="balanced" selected>Balanced</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+            <label class="debug-item debug-range">
+              <span>Shadow updates</span>
+              <select id="shadowUpdateRate" aria-label="Shadow update rate">
+                <option value="live" selected>Responsive</option>
+                <option value="economy">Economy</option>
               </select>
             </label>
               <label class="debug-item"
@@ -305,6 +329,9 @@
           </button>
         </div>
         <nav class="sidebar-nav" aria-label="Panel sections">
+          <button type="button" data-sidebar-view="scene" aria-pressed="false">Scene</button>
+          <button type="button" data-sidebar-view="rendering" aria-pressed="false">Rendering</button>
+          <button type="button" data-sidebar-view="camera" aria-pressed="false">Camera</button>
           <button
             type="button"
             data-sidebar-view="explorer"
@@ -320,6 +347,9 @@
             Details
           </button>
         </nav>
+        <section id="sidebarScenePane" class="sidebar-pane" hidden></section>
+        <section id="sidebarRenderingPane" class="sidebar-pane" hidden></section>
+        <section id="sidebarCameraPane" class="sidebar-pane" hidden></section>
         <section id="sidebarExplorerPane" class="sidebar-pane">
           <label class="sr-only" for="explorerSearch"
             >Search recorded objects</label

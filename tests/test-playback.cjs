@@ -17,6 +17,25 @@ test("shadow range limits distant shadows without overriding disabled casters", 
   assert.equal(partCastsNearby({...part,transparency:1},{x:1,y:0,z:0},camera,'far'),false);
 });
 
+test("shadow coverage follows camera position without jumping when it rotates", async () => {
+  const THREE = require("three");
+  const { shadowRange, partCastsNearby } = await import("../web/static/shadow-range.mjs");
+  const source = readFileSync(path.join(__dirname, "../web/static/app.js"), "utf8");
+  const context = vm.createContext({ THREE, shadowRange, partCastsNearby });
+  vm.runInContext(`let shadowCoverageAt = 0, shadowCoverageState = null, shadowSceneDirty = true;
+    const partMeshes = []; const dbg = { shadowUpdateRate: 'live', shadowRange: 'medium' };
+    const skyState = { sunVector: new THREE.Vector3(0, 1, 0) };
+    const three = { camera: new THREE.PerspectiveCamera(), dir: new THREE.DirectionalLight(), renderer: { shadowMap: {} } };` +
+    source.slice(source.indexOf('function updateShadowCoverage('), source.indexOf('function syncLight(', source.indexOf('function updateShadowCoverage('))) +
+    `; globalThis.test = () => { updateShadowCoverage(1000, true); const initial = three.dir.target.position.clone();
+      three.camera.rotation.y = Math.PI; updateShadowCoverage(1100);
+      const turned = three.dir.target.position.clone(); three.camera.position.x = 10; updateShadowCoverage(1200);
+      return { initial, turned, moved: three.dir.target.position.clone() }; };`, context);
+  const result = context.test();
+  assert.equal(result.initial.distanceTo(result.turned), 0);
+  assert.ok(result.moved.x > 9);
+});
+
 test("terrain reconstruction emits only exposed voxel faces", async () => {
   const THREE = require("three");
   const { buildTerrainGeometries, terrainSurfaceFaceCount } = await import("../web/static/terrain-mesh.mjs");
