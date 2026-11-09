@@ -85,14 +85,61 @@ export function offlineCaptureRow(offline) {
   };
 }
 
-// This function is serialized into the exported file. No server or CDN is used.
-function startOffline() {
-  const pack = JSON.parse(document.getElementById("offline-data").textContent);
-  const assets = {};
-  for (const [url, entry] of Object.entries(pack.assets)) {
-    const bytes = Uint8Array.from(atob(entry.data), (c) => c.charCodeAt(0));
-    assets[url] = URL.createObjectURL(new Blob([bytes], { type: entry.type }));
+export async function encodeOfflinePayload(pack) {
+  const json = JSON.stringify(pack);
+  if (typeof CompressionStream === "undefined")
+    return { encoding: "json", text: json.replace(/</g, "\\u003c") };
+  const compressed = new Uint8Array(await new Response(
+    new Blob([json]).stream().pipeThrough(new CompressionStream("gzip")),
+  ).arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < compressed.length; i += 32768)
+    binary += String.fromCharCode(...compressed.subarray(i, i + 32768));
+  return { encoding: "gzip-base64", text: btoa(binary) };
+}
+
+// Serialized alongside the bootstrap, so opening the file needs no server.
+export async function decodeOfflinePayload(text, encoding) {
+  if (encoding !== "gzip-base64") return JSON.parse(text);
+  if (typeof DecompressionStream === "undefined")
+    throw new Error("This file needs a browser that supports gzip decompression. Please update your browser.");
+  const chunks = [];
+  for (let i = 0; i < text.length; i += 32768) {
+    const binary = atob(text.slice(i, i + 32768));
+    const bytes = new Uint8Array(binary.length);
+    for (let j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j);
+    chunks.push(bytes);
   }
+  const stream = new Blob(chunks).stream().pipeThrough(new DecompressionStream("gzip"));
+  return JSON.parse(await new Response(stream).text());
+}
+
+// This function is serialized into the exported file. No server or CDN is used.
+async function startOffline(decodePayload) {
+  const landing = document.getElementById("landingView");
+  const viewer = document.getElementById("viewerSection");
+  const status = document.getElementById("appStatus");
+  if (landing) landing.style.display = "none";
+  if (viewer) viewer.style.display = "";
+  if (status) status.textContent = "Opening offline replay…";
+  const payload = document.getElementById("offline-data");
+  const pack = await decodePayload(payload.textContent, payload.dataset.encoding);
+  payload.textContent = "";
+  const assetEntries = pack.assets;
+  const assets = new Proxy(Object.create(null), {
+    get(target, url) {
+      if (typeof url !== "string") return undefined;
+      if (url in target) return target[url];
+      const entry = assetEntries[url];
+      if (!entry) return undefined;
+      const binary = atob(entry.data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      target[url] = URL.createObjectURL(new Blob([bytes], { type: entry.type }));
+      delete assetEntries[url];
+      return target[url];
+    },
+  });
   window.__REPLAY_OFFLINE__ = {
     assets,
     mode: pack.mode,
@@ -137,6 +184,7 @@ function startOffline() {
   map.type = "importmap";
   map.textContent = JSON.stringify({ imports });
   document.head.appendChild(map);
+  if (status) status.textContent = "";
   import("offline:/static/app.js").catch((error) => {
     document.getElementById("appStatus").textContent =
       "Could not open offline viewer: " + error.message;
@@ -218,8 +266,7 @@ export async function downloadOffline({ mode, id, progress, confirmMissing }) {
           binary += String.fromCharCode(...bytes.subarray(i, i + 32768));
         assets[url] = { type, data: btoa(binary) };
       } catch {
-        if (required.has(url) || url.startsWith("/api/asset/"))
-          failures.push(url);
+        if (required.has(url)) failures.push(url);
       }
       progress(`Packing assets ${++done}/${urls.length}…`);
     }
@@ -241,18 +288,21 @@ export async function downloadOffline({ mode, id, progress, confirmMissing }) {
   }
   const payload = page.createElement("script");
   payload.id = "offline-data";
-  payload.type = "application/json";
-  payload.textContent = JSON.stringify({
+  progress("Compressing offline replay…");
+  const packed = await encodeOfflinePayload({
     mode,
     id,
     capture,
     modules,
     assets,
     failures,
-  }).replace(/</g, "\\u003c");
+  });
+  payload.type = "application/octet-stream";
+  payload.dataset.encoding = packed.encoding;
+  payload.textContent = packed.text;
   page.body.appendChild(payload);
   const boot = page.createElement("script");
-  boot.textContent = "(" + startOffline.toString() + ")();";
+  boot.textContent = "(" + startOffline.toString() + ")(" + decodeOfflinePayload.toString() + ").catch(error => { const status = document.getElementById('appStatus'); if (status) status.textContent = 'Could not open offline viewer: ' + error.message; else document.body.prepend('Could not open offline viewer: ' + error.message); });";
   page.body.appendChild(boot);
   const html = "<!doctype html>\n" + page.documentElement.outerHTML;
   const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));

@@ -928,3 +928,14 @@ test("interpolation selects only parts changed in the next frame", async () => {
   timeline.seek(1000);
   assert.deepEqual(timeline.nextInterpolations(), []);
 });
+
+test("offline payload compresses and restores replay data without a server", async () => {
+  const { encodeOfflinePayload, decodeOfflinePayload } = await import('../web/static/offline-export.mjs');
+  const capture = { mode: 'rep', id: 'test', capture: { frames: Array.from({ length: 1000 }, (_, t) => ({ t, value: 'repeated scene data' })) }, assets: { test: { data: 'YWJj', type: 'text/plain' } } };
+  const packed = await encodeOfflinePayload(capture);
+  assert.equal(packed.encoding, 'gzip-base64');
+  assert.ok(packed.text.length < JSON.stringify(capture).length);
+  assert.deepEqual(await decodeOfflinePayload(packed.text, packed.encoding), capture);
+  assert.deepEqual(await decodeOfflinePayload(JSON.stringify(capture), 'json'), capture);
+  await assert.rejects(decodeOfflinePayload('broken', 'gzip-base64'));
+});

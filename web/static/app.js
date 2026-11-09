@@ -10,7 +10,7 @@ import { ScreenGuiView } from "./screen-gui.mjs";
 import { applyViewerOverrides } from "./viewer-overrides.mjs";
 import { applyMeshSizing } from "./mesh-sizing.mjs";
 import { decodeDxt1DDS, surfaceKind, surfaceRepeats, surfacePixels } from "./surface-patterns.mjs";
-import { downloadOffline, offlineCaptureRow } from "./offline-export.mjs?v=offline-3";
+import { downloadOffline, offlineCaptureRow } from "./offline-export.mjs?v=offline-4";
 import { toNum, toVec3, readAny, normalizePart, faceName, visibleDecalTexture, isCharHead, textureProxy, textureFetchUrl, meshProxy, usesBoxFaceMaterials } from "./scene-data.mjs?v=render-20261109-2";
 import { setCameraVisibility, cameraSees } from "./render-visibility.mjs";
 import { meshTexturePolicy, mapFragmentForMode } from "./render-appearance.mjs?v=visibility-20261109";
@@ -5076,6 +5076,7 @@ function onResize() {
 async function bootstrap() {
   wireClientLoggers();
   wireDebugMenu();
+  if (globalThis.__REPLAY_OFFLINE__) showViewer();
   addClientLog("info", "bootstrap started");
   const fontReady = loadViewerFont();
   const threeReady = await setupThree();
@@ -5088,7 +5089,7 @@ async function bootstrap() {
 
   try {
     curMode = modeSelect?.value === "rep" ? "rep" : "snap";
-    await loadList();
+    if (!globalThis.__REPLAY_OFFLINE__) await loadList();
     const opened = await openShared();
     if (!opened) showLanding();
   } catch (error) {
