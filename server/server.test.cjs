@@ -196,6 +196,8 @@ test("Node server accepts chunked replays and enforces local authentication", as
   await fs.mkdir(materialDir, { recursive: true });
   await fs.mkdir(path.join(contentDir, "textures"), { recursive: true });
   await fs.mkdir(path.join(clientContentDir, "textures"), { recursive: true });
+  await fs.mkdir(path.join(clientAssetsDir, "sounds"), { recursive: true });
+  await fs.writeFile(path.join(clientAssetsDir, "sounds", "test.ogg"), Buffer.from("OggS-test"));
   await fs.writeFile(
     path.join(clientContentDir, "textures", "face.png"),
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
@@ -247,6 +249,10 @@ test("Node server accepts chunked replays and enforces local authentication", as
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     assert.ok(ready, `server did not start: ${log}`);
+    const localSound = await fetch(base + "/api/asset/audio?src=" + encodeURIComponent("rbxasset://sounds/test.ogg"));
+    assert.equal(localSound.status, 200);
+    assert.equal(localSound.headers.get("content-type"), "audio/ogg");
+    assert.equal(Buffer.from(await localSound.arrayBuffer()).toString(), "OggS-test");
     const clientContent = await fetch(
       base + "/api/asset/texture?src=" + encodeURIComponent("rbxasset://textures/face.png"),
     );
@@ -348,6 +354,7 @@ test("Node server accepts chunked replays and enforces local authentication", as
       },
       durationMs: 200,
       frames: [{ t: 200, a: [], u: [], d: [] }],
+      soundEvents: [{ t: 50, id: 'sound_1', event: 'play', soundId: 'rbxasset://sounds/test.ogg', playing: true, timePosition: 0, volume: 0.5, playbackSpeed: 1.2, spatial: true, partPath: 'part_1' }],
     };
     const serialized = JSON.stringify(replay);
     const pieces = [serialized.slice(0, 30), serialized.slice(30, 60), serialized.slice(60)];
@@ -373,6 +380,7 @@ test("Node server accepts chunked replays and enforces local authentication", as
       await fetch(base + "/api/replay/latest?replayId=test-replay")
     ).json();
     assert.equal(loaded.frames.length, 1);
+    assert.equal(loaded.soundEvents[0].playbackSpeed, 1.2);
     assert.equal(loaded.base.terrain.cells[0].m, "Pebble");
     const library = await (await fetch(base + "/api/replays")).json();
     assert.equal(library.replays.find((row) => row.replayId === "test-replay").captureFps, 60);

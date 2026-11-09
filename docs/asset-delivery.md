@@ -67,7 +67,7 @@ Terrain uses Roblox's `Terrain:ReadVoxels()` at the required 4-stud resolution. 
 
 ### Audio
 
-Audio references are subject to asset privacy and usage permissions. A `SoundId` is a reference, not proof that an arbitrary downloader may obtain the original audio file. Keep audio playback out of scope unless the capture format, browser playback, permission model, and rights to use the audio are all handled. See Roblox's [audio asset documentation](https://create.roblox.com/docs/audio/assets).
+Audio references are subject to asset privacy and usage permissions. A `SoundId` is a reference, not proof that an arbitrary downloader may obtain the original audio file. The viewer can play captured local sounds and supported audio assets available to the configured server account; inaccessible or unsupported audio is reported rather than bypassed. Offline export tries to include referenced audio and reports missing assets. See Roblox's [audio asset documentation](https://create.roblox.com/docs/audio/assets).
 
 ### Models and asset management
 

@@ -56,10 +56,10 @@ export function captureAssets(capture) {
     if (typeof value !== "string" || !value.trim()) return;
     if (
       /^(rbxasset(?:id)?:\/\/|https?:\/\/)/i.test(value.trim()) &&
-      /meshId|texture|map|shirt|pants|graphic|skybox/i.test(key)
+      /meshId|soundId|texture|map|shirt|pants|graphic|skybox/i.test(key)
     ) {
       required.add(
-        assetUrl(/meshId/i.test(key) ? "mesh" : "texture", value.trim()),
+        assetUrl(/meshId/i.test(key) ? "mesh" : /soundId/i.test(key) ? "audio" : "texture", value.trim()),
       );
     }
   }

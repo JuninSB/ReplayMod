@@ -46,6 +46,10 @@ The terminal offers to create and unlock the encrypted `auth.lzk8` file for Robl
 
 The viewer starts with its menu collapsed. Use **Menu → Rendering** to adjust scene brightness and shadow range. Use **Menu → Hide UI** to hide controls and **Show UI** to restore them. Dismiss the loading status with × and reopen it from **Menu → Loading status**. Use **Menu → Explorer** to inspect objects and **Menu → Save scene thumbnail** to capture a thumbnail. Loading shows mesh/texture progress, retries failed assets twice, and offers **Retry failed assets** without reloading successful assets. Offline export makes three attempts before listing failures. R6 SpecialMesh heads and smaller text-only nameplates are supported. See the [renderer compatibility guide](docs/rendering.md) for lighting properties, post effects, and the differences from Roblox's engine.
 
+New recordings can include observed sounds, world text and child instances. Explorer lets you temporarily edit supported part and sound properties while replaying or seeking; **Reset viewer edits** restores the recorded values. These edits do not change the recording or the game. Choose touch arrows or joystick under **Menu → Camera**. Older recordings cannot recover information that was not captured.
+
+The viewer uses Three.js r187 and requires a browser with WebGL 2.
+
 ## Develop and verify
 
 ```sh

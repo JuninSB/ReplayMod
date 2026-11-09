@@ -91,6 +91,7 @@ local function partData(p, stablePath)
     end
     local data = {
         path = stablePath or pth(p),
+        instancePath = pth(p),
         name = p.Name,
         className = p.ClassName,
         position = v3(p.Position),
@@ -192,6 +193,48 @@ local function partData(p, stablePath)
         end
     end
     if #lights > 0 then data.lights = lights end
+    -- Capture common in-world text attached directly to this part. Layout and
+    -- rich text are approximated by the viewer; ScreenGui remains local UI.
+    local textElements = {}
+    for _, gui in ipairs(p:GetChildren()) do
+        if (gui:IsA("SurfaceGui") or gui:IsA("BillboardGui")) and gui.Enabled then
+            for _, label in ipairs(gui:GetDescendants()) do
+                if (label:IsA("TextLabel") or label:IsA("TextButton")) and label.Visible and label.Text ~= "" and #textElements < 32 then
+                    table.insert(textElements, {text = tostring(label.Text):sub(1, 300), font = tostring(label.Font), color3 = hex(label.TextColor3),
+                        transparency = label.TextTransparency, kind = gui.ClassName,
+                        face = gui:IsA("SurfaceGui") and tostring(gui.Face) or "Front"})
+                end
+            end
+        end
+    end
+    if #textElements > 0 then data.textElements = textElements end
+    local capturedChildren = 0
+    local function captureChild(inst, depth)
+        if depth > 5 or capturedChildren >= 100 or inst:IsA("BasePart") then return nil end
+        capturedChildren += 1
+        local node = {name = inst.Name, className = inst.ClassName, children = {}}
+        if inst:IsA("Sound") then
+            node.properties = {instancePath = pth(inst), soundId = inst.SoundId, volume = inst.Volume, playbackSpeed = inst.PlaybackSpeed,
+                looped = inst.Looped, rollOffMinDistance = inst.RollOffMinDistance, rollOffMaxDistance = inst.RollOffMaxDistance,
+                rollOffMode = tostring(inst.RollOffMode), timePosition = inst.TimePosition, playing = inst.IsPlaying}
+        elseif inst:IsA("Attachment") then node.properties = {position = v3(inst.Position), orientation = v3(inst.Orientation)}
+        elseif inst:IsA("SpecialMesh") then node.properties = {meshId = inst.MeshId, textureId = inst.TextureId, meshType = tostring(inst.MeshType), scale = v3(inst.Scale)}
+        elseif inst:IsA("TextLabel") or inst:IsA("TextButton") then node.properties = {text = tostring(inst.Text):sub(1, 300), font = tostring(inst.Font), color3 = hex(inst.TextColor3), visible = inst.Visible}
+        elseif inst:IsA("Decal") then node.properties = {texture = inst.Texture, transparency = inst.Transparency, face = tostring(inst.Face)} end
+        for _, child in ipairs(inst:GetChildren()) do
+            local recorded = captureChild(child, depth + 1)
+            if recorded then table.insert(node.children, recorded) end
+            if capturedChildren >= 100 then break end
+        end
+        return node
+    end
+    local childInstances = {}
+    for _, child in ipairs(p:GetChildren()) do
+        local recorded = captureChild(child, 1)
+        if recorded then table.insert(childInstances, recorded) end
+        if capturedChildren >= 100 then break end
+    end
+    if #childInstances > 0 then data.childInstances = childInstances end
     return data
 end
 

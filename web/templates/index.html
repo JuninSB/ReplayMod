@@ -76,6 +76,8 @@
           Save scene thumbnail
         </button>
         <button id="assetStatusBtn" type="button" hidden>Loading status</button>
+        <button id="audioToggleBtn" type="button" aria-pressed="true">Audio on</button>
+        <p id="audioStatus" class="audio-status" role="status"></p>
         <button id="hideUiBtn" type="button">Hide UI</button>
         <div class="viewer-menu-heading">Settings &amp; sharing</div>
         <div id="toolbarExtras" class="toolbar-extras">
@@ -210,6 +212,13 @@
               <button id="setLookBtn" class="refresh-btn" type="button">
                 Look: right mouse button
               </button>
+              <label class="debug-item debug-range">
+                <span>Touch movement</span>
+                <select id="touchMovement" aria-label="Touch movement">
+                  <option value="arrows" selected>Arrow buttons</option>
+                  <option value="joystick">Joystick</option>
+                </select>
+              </label>
             </div>
           </div>
           <button id="shareBtn" class="refresh-btn" type="button">Share</button>
@@ -271,6 +280,13 @@
             <button type="button" data-move="KeyE" aria-label="Up">＋</button>
             <button type="button" data-move="KeyQ" aria-label="Down">−</button>
           </div>
+          <div class="touch-joystick" id="touchJoystickControls" role="group" aria-label="Joystick camera movement" hidden>
+            <div id="touchJoystick" class="joystick-base" role="application" aria-label="Move camera with joystick"><div id="joystickThumb" class="joystick-thumb"></div></div>
+            <div class="joystick-height">
+              <button type="button" data-move="KeyE" aria-label="Up">＋</button>
+              <button type="button" data-move="KeyQ" aria-label="Down">−</button>
+            </div>
+          </div>
         </div>
         <div id="replayBar" class="replay-bar" style="display: none">
           <button id="replayPlayBtn" class="refresh-btn" type="button">
@@ -319,14 +335,6 @@
       >
         <div class="sidebar-header">
           <h2 id="panelTitle">Replay Explorer</h2>
-          <button
-            id="sidebarCloseBtn"
-            type="button"
-            class="sidebar-close-btn"
-            aria-label="Close sidebar"
-          >
-            ×
-          </button>
         </div>
         <nav class="sidebar-nav" aria-label="Panel sections">
           <button type="button" data-sidebar-view="scene" aria-pressed="false">Scene</button>
@@ -365,7 +373,8 @@
           </div>
           <div id="explorerTree" class="explorer-tree"></div>
           <h3>Properties</h3>
-          <pre id="inspectorData" class="json-box">Select an object.</pre>
+          <button id="resetViewerEdits" type="button" hidden>Reset viewer edits</button>
+          <div id="inspectorData" class="properties-panel">Select an object.</div>
         </section>
         <section id="sidebarDetailsPane" class="sidebar-pane" hidden>
           <div id="snapshotMeta" class="meta" role="status">

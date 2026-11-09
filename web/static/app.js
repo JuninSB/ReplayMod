@@ -4,6 +4,9 @@ import { AssetLoads } from "./asset-loads.mjs";
 import { chooseSpawnTarget } from "./camera-spawn.mjs";
 import { buildTerrainGeometries } from "./terrain-mesh.mjs";
 import { ReplayTimeline } from "./replay-timeline.mjs";
+import { joystickVector } from "./touch-joystick.mjs";
+import { ReplayAudio } from "./replay-audio.mjs";
+import { applyViewerOverrides } from "./viewer-overrides.mjs";
 import { downloadOffline, offlineCaptureRow } from "./offline-export.mjs?v=offline-3";
 import { toNum, toVec3, readAny, normalizePart, faceName, visibleDecalTexture, isCharHead, textureProxy, textureFetchUrl, meshProxy, usesBoxFaceMaterials } from "./scene-data.mjs?v=render-20261109-2";
 import { setCameraVisibility, cameraSees } from "./render-visibility.mjs";
@@ -64,7 +67,6 @@ const panelTitle = document.getElementById("panelTitle");
 const viewerContext = document.getElementById("viewerContext");
 const viewerSidebar = document.getElementById("viewerSidebar");
 const sidebarToggleBtn = document.getElementById("sidebarToggleBtn");
-const sidebarCloseBtn = document.getElementById("sidebarCloseBtn");
 const sidebarExplorerPane = document.getElementById("sidebarExplorerPane");
 const sidebarDetailsPane = document.getElementById("sidebarDetailsPane");
 const libraryTabs = document.getElementById("libraryTabs");
@@ -92,6 +94,8 @@ let replays = [];
 let curMode = "rep";
 if (modeSelect) modeSelect.value = "rep";
 let repDat = null;
+let replayAudio = null;
+let replayAudioEnabled = true;
 let replayExplorerDirty = false;
 let replayExplorerLastAt = 0;
 let replayExplorerSignature = "";
@@ -127,6 +131,8 @@ let renderVersion = 0;
 let selectedPath = "";
 let selectedRow = null;
 let selectedExplorerNode = null;
+const explorerExpanded = new Set();
+const viewerOverrides = new Map();
 let selectedMesh = null;
 let hoveredMesh = null;
 let latestSnapshot = null;
@@ -179,6 +185,7 @@ function sampleViewerDiagnostics(now) {
   }
 }
 const pressedKeys = new Set();
+const joystickInput = { x: 0, y: 0, pointerId: null };
 let studioFlyActive = false;
 let studioMoveSpeed = 24;
 let cameraLookSensitivity = 0.0022;
@@ -1290,7 +1297,25 @@ async function initSky() {
     }
   }
 
-  skyVisuals = { group, sun, moon, clouds };
+  skyVisuals = { group, sun, moon, clouds, defaultSun: sunTex, defaultMoon: moonTex, celestialKeys: {} };
+}
+
+function syncCelestialTextures(settings) {
+  if (!skyVisuals) return;
+  for (const [name, property, fallback] of [['sun', 'sunTextureId', 'defaultSun'], ['moon', 'moonTextureId', 'defaultMoon']]) {
+    const source = String(settings?.[property] || '').trim();
+    if (skyVisuals.celestialKeys[name] === source) continue;
+    skyVisuals.celestialKeys[name] = source;
+    const sprite = skyVisuals[name];
+    sprite.material.map = skyVisuals[fallback];
+    sprite.material.needsUpdate = true;
+    if (!source || source === (name === 'sun' ? 'rbxasset://sky/sun.jpg' : 'rbxasset://sky/moon.jpg')) continue;
+    loadTexSrc(source, texture => {
+      if (!texture || !skyVisuals || skyVisuals.celestialKeys[name] !== source) return;
+      sprite.material.map = texture;
+      sprite.material.needsUpdate = true;
+    });
+  }
 }
 
 function texReady(tex) {
@@ -1304,6 +1329,7 @@ function texReady(tex) {
 
 function syncSky(sunVector, dayMix, nightMix, clockTime) {
   if (!three || !skyVisuals) return;
+  syncCelestialTextures(skyState?.skySettings);
   const showCelestial = skyState?.skySettings?.celestialBodiesShown !== false;
   const radius = 520;
   const starCount = Math.max(0,Math.min(5000,Math.floor(toNum(skyState?.skySettings?.starCount,0))));
@@ -2021,7 +2047,7 @@ function applyMeshGeo(mesh, part, version) {
 }
 
 function updateFly(delta) {
-  if (!three || (!studioFlyActive && !document.querySelector(".touch-controls :active")) || delta <= 0) return;
+  if (!three || (!studioFlyActive && joystickInput.pointerId === null && !document.querySelector(".touch-controls :active")) || delta <= 0) return;
 
   const speedFactor = pressedKeys.has("ShiftLeft") || pressedKeys.has("ShiftRight") ? 0.35 : 1;
   const distanceScale = Math.max(1, three.camera.position.distanceTo(three.controls.target) / 40);
@@ -2042,9 +2068,14 @@ function updateFly(delta) {
   if (pressedKeys.has("KeyA")) move.sub(right);
   if (pressedKeys.has("KeyE")) move.add(up);
   if (pressedKeys.has("KeyQ")) move.sub(up);
+  if (joystickInput.pointerId !== null) {
+    move.addScaledVector(right, joystickInput.x);
+    move.addScaledVector(forward, -joystickInput.y);
+  }
   if (move.lengthSq() <= 0) return;
 
-  move.normalize().multiplyScalar(step);
+  if (move.lengthSq() > 1) move.normalize();
+  move.multiplyScalar(step);
   three.camera.position.add(move);
   three.controls.target.add(move);
 }
@@ -2258,13 +2289,12 @@ async function setupThree() {
   renderer.setSize(bootW, bootH);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.25;
-  renderer.useLegacyLights = false;
   renderer.shadowMap.enabled = true;
   // Directional shadows are expensive on mobile. Scene changes explicitly
   // request an update, so the same shadow map is reused between changes
   // instead of being rendered again for every animation frame.
   renderer.shadowMap.autoUpdate = false;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   viewport.appendChild(renderer.domElement);
 
@@ -2475,6 +2505,7 @@ function clearWorld() {
   for (const mesh of partMeshes) {
     clearStudOverlay(mesh);
     clearChunkMeshes(mesh);
+    clearWorldText(mesh);
   }
   clearMeshes(partMeshes);
   clearMeshes(characterLabels);
@@ -3151,7 +3182,27 @@ function syncLight(snapshot) {
   apShdwMd();
 }
 
-function makeTextSprite(text) {
+async function loadViewerFont() {
+  if (typeof FontFace === 'undefined' || !document.fonts) return;
+  const fonts = [
+    ['ReplayBuilderSans', 'rbxasset://fonts/BuilderSans-Regular.otf'],
+    ['ReplaySourceSans', 'rbxasset://fonts/SourceSansPro-Regular.ttf'],
+    ['ReplayRoboto', 'rbxasset://fonts/Roboto-Regular.ttf'],
+    ['ReplayMontserrat', 'rbxasset://fonts/Montserrat-Regular.ttf'],
+  ];
+  await Promise.all(fonts.map(async ([name, source]) => {
+    try {
+      const response = await fetch(textureProxy(source));
+      if (!response.ok) throw new Error('font unavailable');
+      const face = new FontFace(name, await response.arrayBuffer(), { weight: '400' });
+      document.fonts.add(await face.load());
+    } catch {
+      addClientLog('warn', 'Local viewer font unavailable; using fallback', { family: name });
+    }
+  }));
+}
+
+function makeTextSprite(text, options = {}) {
   if (!THREE) return null;
   const label = String(text || "").trim();
   if (!label) return null;
@@ -3161,24 +3212,54 @@ function makeTextSprite(text) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.font = "500 40px Arial, sans-serif";
+  const font = String(options.font || '').toLowerCase();
+  const family = font.includes('sourcesans') ? 'ReplaySourceSans' : font.includes('roboto') ? 'ReplayRoboto' : font.includes('gotham') || font.includes('montserrat') ? 'ReplayMontserrat' : 'ReplayBuilderSans';
+  ctx.font = `400 40px ${family}, Arial, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.strokeStyle = "rgba(0,0,0,0.7)";
   ctx.lineWidth = 3;
   ctx.lineJoin = "round";
   ctx.strokeText(label, canvas.width / 2, canvas.height / 2, canvas.width - 16);
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = hexColor(options.color3 || '#ffffff');
   ctx.fillText(label, canvas.width / 2, canvas.height / 2, canvas.width - 16);
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true, depthWrite: false });
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 1 - Math.max(0, Math.min(1, toNum(options.transparency, 0))), depthTest: true, depthWrite: false });
   const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(Math.min(4.5, Math.max(2.2, label.length * 0.17)), 0.65, 1);
+  sprite.scale.set(Math.min(6.9, Math.max(3.4, label.length * 0.26)), 1, 1);
   sprite.renderOrder = 25;
   sprite.userData.isBillboard = true;
   sprite.frustumCulled = false;
   return sprite;
+}
+
+function clearWorldText(mesh) {
+  if (mesh?.userData?.worldText) clearMeshes(mesh.userData.worldText);
+  if (mesh?.userData) mesh.userData.worldText = [];
+}
+
+function addWorldText(mesh, part) {
+  clearWorldText(mesh);
+  const elements = Array.isArray(part?.textElements) ? part.textElements.slice(0, 32) : [];
+  elements.forEach((element, index) => {
+    const sprite = makeTextSprite(element.text, element);
+    if (!sprite) return;
+    let object = sprite;
+    if (element.kind === 'SurfaceGui') {
+      const transform = decalFaceTf(mesh, element.face);
+      const material = new THREE.MeshBasicMaterial({ map: sprite.material.map, transparent: true, opacity: sprite.material.opacity, side: THREE.DoubleSide, depthWrite: false });
+      sprite.material.dispose();
+      object = new THREE.Mesh(new THREE.PlaneGeometry(transform.w, transform.h), material);
+      object.position.copy(transform.offset);
+      object.rotation.copy(transform.rot);
+      object.renderOrder = 26 + index;
+    } else {
+      object.position.set(0, Math.max(0.5, toNum(part.size?.y, 2) / 2) + 1.2 + index * 0.5, 0);
+    }
+    mesh.add(object);
+    mesh.userData.worldText.push(object);
+  });
 }
 
 function addHeadLabel(mesh) {
@@ -3210,7 +3291,7 @@ function updateNameplates() {
     world.y += Math.max(0.5,toNum(part.size?.y,2) / 2) + 0.7;
     label.position.copy(head.worldToLocal(world));
     const base = label.userData.baseScale;
-    const scale = Math.min(1, 16 * (128 / 40) * distance * worldPerPixel / base.y);
+    const scale = Math.min(1, 20 * (128 / 40) * distance * worldPerPixel / base.y);
     label.scale.copy(base).multiplyScalar(scale);
   }
 }
@@ -3450,7 +3531,7 @@ function drawSnap(snapshot, opt = {}) {
   assetLoads.beginScene();
   clearWorld();
 
-  const parts = buildParts(snapshot);
+  const parts = buildParts(snapshot).map(part => applyViewerOverrides(part, viewerOverrides.get(part.path)));
   const decals = Array.isArray(snapshot.decals) ? snapshot.decals : [];
 
   if (parts.length === 0) {
@@ -3472,6 +3553,7 @@ function drawSnap(snapshot, opt = {}) {
       three.scene.add(mesh);
       partMeshes.push(mesh);
       if (part?.path) partByPath.set(String(part.path), mesh);
+      addWorldText(mesh, part);
       if (dbg.meshBoxesOn || String(part?.className || "") !== "MeshPart") {
         applyMeshGeo(mesh, part, version);
       }
@@ -3671,12 +3753,70 @@ function selectNode(node, row) {
   selectedExplorerNode = node || null;
   selectedPath = String(node?.path || "");
   setSelectedRow(row);
-  inspectorData.textContent = safeJson({
-    path: node?.path || "",
-    className: node?.className || "",
-    properties: node?.properties || {},
-  });
-  highlightPath(selectedPath);
+  renderProperties(node);
+  highlightPath(node?.partPath || selectedPath);
+}
+
+function renderProperties(node) {
+  inspectorData.replaceChildren();
+  const part = node?.editable && partByPath.get(String(node.path || ''))?.userData?.part;
+  const sound = node?.soundEventId && replayAudio ? replayAudio : null;
+  const note = document.createElement('p');
+  note.className = 'properties-note';
+  note.textContent = part || sound ? 'Viewer-only edits persist during playback and seeking; they do not change the recording.' : 'Recorded properties · read only';
+  inspectorData.appendChild(note);
+  const fields = part || { ...(node?.properties && typeof node.properties === 'object' ? node.properties : {}), ...(sound?.overrides.get(node.soundEventId) || {}) };
+  const editable = new Set(['name', 'color3', 'transparency', 'position', 'orientation', 'size']);
+  const soundEditable = new Set(['volume', 'playbackSpeed', 'looped', 'rollOffMinDistance', 'rollOffMaxDistance']);
+  const addField = (key, value, axis = '') => {
+    const label = document.createElement('label'); label.className = 'property-row';
+    const caption = document.createElement('span'); caption.textContent = axis ? `${key}.${axis}` : key; label.appendChild(caption);
+    const canEdit = Boolean(part && editable.has(key) || sound && soundEditable.has(key));
+    const input = document.createElement('input');
+    input.type = typeof value === 'boolean' ? 'checkbox' : typeof value === 'number' ? 'number' : 'text';
+    if (input.type === 'number') input.step = 'any';
+    if (input.type === 'checkbox') input.checked = Boolean(value); else input.value = value == null ? '' : String(value);
+    input.readOnly = !canEdit;
+    if (input.type === 'checkbox') input.disabled = !canEdit;
+    input.setAttribute('aria-label', axis ? `${key} ${axis}` : key);
+    if (canEdit) input.addEventListener('change', () => {
+      if (sound && soundEditable.has(key)) {
+        let next = input.type === 'checkbox' ? input.checked : Number(input.value);
+        if (typeof next === 'number' && !Number.isFinite(next)) return;
+        if (key === 'volume') next = Math.max(0, Math.min(10, next));
+        if (key === 'playbackSpeed') next = Math.max(0.1, Math.min(4, next));
+        if (key.startsWith('rollOff')) next = Math.max(0.1, next);
+        sound.overrides.set(node.soundEventId, { ...(sound.overrides.get(node.soundEventId) || {}), [key]: next });
+        sound.sync(repMs, repRun, repSpeed, three?.camera, performance.now(), true);
+        const reset = document.getElementById('resetViewerEdits'); if (reset) reset.hidden = false;
+        renderProperties(node);
+        return;
+      }
+      const current = partByPath.get(String(node.path))?.userData?.part;
+      if (!current) return;
+      let next = input.type === 'number' ? Number(input.value) : input.value;
+      if ((input.type === 'number' && !Number.isFinite(next)) || (key === 'color3' && !/^#[0-9a-f]{6}$/i.test(next))) { input.value = String(value); return; }
+      if (key === 'transparency') next = Math.max(0, Math.min(1, next));
+      if (key === 'size' && axis) next = Math.max(0.2, next);
+      if (key === 'name') next = String(next).slice(0, 128);
+      const override = { ...(viewerOverrides.get(current.path) || {}) };
+      override[key] = axis ? { ...(override[key] || {}), [axis]: next } : next;
+      viewerOverrides.set(current.path, override);
+      const updated = applyViewerOverrides(current, override);
+      if (!updated) return;
+      repUpd(updated, 0, current);
+      const reset = document.getElementById('resetViewerEdits');
+      if (reset) reset.hidden = false;
+      node.properties = updated;
+      renderProperties(node);
+    });
+    label.appendChild(input); inspectorData.appendChild(label);
+  };
+  for (const [key, value] of Object.entries(fields)) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && ['position', 'orientation', 'size'].includes(key)) {
+      for (const axis of ['x', 'y', 'z']) addField(key, value[axis], axis);
+    } else if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) addField(key, value);
+  }
 }
 
 function buildNodeElement(node, depth, filter) {
@@ -3686,7 +3826,8 @@ function buildNodeElement(node, depth, filter) {
   const hasChildren = children.length > 0;
   const details = document.createElement("details");
   details.className = "explorer-node";
-  details.open = depth < 1 || Boolean(filter);
+  const expansionKey = String(node.treeKey || node.path || `${node.className}:${node.name}`);
+  details.open = depth < 1 || Boolean(filter) || explorerExpanded.has(expansionKey);
 
   const summary = document.createElement("summary");
   const row = document.createElement("div");
@@ -3707,6 +3848,10 @@ function buildNodeElement(node, depth, filter) {
     ev.preventDefault();
     ev.stopPropagation();
     selectNode(node, row);
+    if (hasChildren) {
+      details.open = !details.open;
+      if (details.open) explorerExpanded.add(expansionKey); else explorerExpanded.delete(expansionKey);
+    }
   });
   summary.appendChild(row);
   details.appendChild(summary);
@@ -3782,22 +3927,48 @@ function buildSceneExplorer(snapshot) {
     decalsByPart.set(path, list);
   }
 
+  const soundIdsByPath = new Map();
+  for (const event of repDat?.raw?.soundEvents || []) if (event?.instancePath && event?.id) soundIdsByPath.set(event.instancePath, event.id);
+  const childNode = (child, partPath, key) => ({
+    name: String(child?.name || 'Instance'), className: String(child?.className || 'Instance'),
+    path: `sub:${key}`, treeKey: `sub:${key}`, partPath, properties: child?.properties || {},
+    soundEventId: child?.className === 'Sound' ? soundIdsByPath.get(child?.properties?.instancePath) : undefined,
+    children: (Array.isArray(child?.children) ? child.children : []).map((item, index) => childNode(item, partPath, `${key}:${index}`)),
+  });
+  const makePartNode = part => {
+    const path = String(part.path || '');
+    const recorded = Array.isArray(part.childInstances) ? part.childInstances : [];
+    const children = recorded.length ? recorded.map((child, index) => childNode(child, path, `${path}:${index}`)) :
+      (decalsByPart.get(path) || []).map((decal, index) => childNode({ name: decal.name || `Decal ${index + 1}`, className: decal.className || 'Decal', properties: decal }, path, `${path}:decal:${index}`));
+    return { name: String(part.name || 'Part'), className: String(part.className || 'BasePart'), path, treeKey: `part:${path}`, editable: true, properties: part, children };
+  };
+
+  if (parts.some(part => String(part?.instancePath || '').startsWith('Workspace/'))) {
+    const root = { name: 'Workspace', className: 'Service', path: '', treeKey: 'workspace', properties: { recordedObjects: parts.length }, children: [] };
+    const groups = new Map([['Workspace', root]]);
+    for (const part of parts) {
+      const segments = String(part.instancePath || '').split('/').filter(Boolean);
+      if (segments[0] !== 'Workspace' || segments.length < 2) { root.children.push(makePartNode(part)); continue; }
+      let parent = root, prefix = 'Workspace';
+      for (const segment of segments.slice(1, -1)) {
+        prefix += `/${segment}`;
+        if (!groups.has(prefix)) {
+          const group = { name: segment, className: 'Group', path: '', treeKey: `group:${prefix}`, properties: { recordedPath: prefix }, children: [] };
+          groups.set(prefix, group); parent.children.push(group);
+        }
+        parent = groups.get(prefix);
+      }
+      parent.children.push(makePartNode(part));
+    }
+    const roots = [root];
+    if (snapshot?.lighting && Object.keys(snapshot.lighting).length) roots.push({ name: 'Lighting', className: 'Service', path: '', properties: snapshot.lighting, children: [] });
+    return roots;
+  }
+
   for (const part of parts) {
     if (!part || typeof part !== "object") continue;
     const path = String(part.path || "");
-    const node = {
-      name: String(part.name || "Part"),
-      className: String(part.className || "BasePart"),
-      path,
-      properties: part,
-      children: (decalsByPart.get(path) || []).map((decal, index) => ({
-        name: String(decal.name || `Decal ${index + 1}`),
-        className: String(decal.className || "Decal"),
-        path,
-        properties: decal,
-        children: [],
-      })),
-    };
+    const node = makePartNode(part);
     const characterName = String(part.characterName || "").trim();
     if (!characterName) {
       worldObjects.push(node);
@@ -3848,7 +4019,7 @@ function replayExplorerKey(snapshot) {
   const parts = Array.isArray(snapshot?.parts) ? snapshot.parts : [];
   const decals = Array.isArray(snapshot?.decals) ? snapshot.decals : [];
   return [
-    parts.map((part) => `${part.path || ""}\0${part.name || ""}\0${part.className || ""}\0${part.characterName || ""}`).join("\x01"),
+    parts.map((part) => `${part.path || ""}\0${part.instancePath || ""}\0${part.name || ""}\0${part.className || ""}\0${part.characterName || ""}\0${JSON.stringify(part.childInstances || [])}`).join("\x01"),
     decals.map((decal) => `${decal.id || decal.instancePath || ""}\0${decal.partPath || ""}`).join("\x01"),
   ].join("\x02");
 }
@@ -3943,6 +4114,7 @@ async function loadList() {
 }
 
 function showLanding() {
+  replayAudio?.dispose();
   sceneLoad += 1;
   displayedSceneKey = "";
   cancelAnimationFrame(repAnimation);
@@ -4304,7 +4476,8 @@ function repLerp(a, b, t) {
 let replayPoseEuler, replayPoseFrom, replayPoseTo;
 function repSet(mesh, p, alpha = 1, src = null) {
   if (!mesh || !p) return;
-  const q = src || p;
+  p = applyViewerOverrides(p, viewerOverrides.get(p.path));
+  const q = src ? applyViewerOverrides(src, viewerOverrides.get(src.path || p.path)) : p;
   const px = alpha >= 1 ? p?.position?.x : repLerp(q?.position?.x, p?.position?.x, alpha);
   const py = alpha >= 1 ? p?.position?.y : repLerp(q?.position?.y, p?.position?.y, alpha);
   const pz = alpha >= 1 ? p?.position?.z : repLerp(q?.position?.z, p?.position?.z, alpha);
@@ -4386,6 +4559,7 @@ function repDel(path) {
   clearStudOverlay(mesh);
   clearChunkMeshes(mesh);
   clearClothingOverlays(mesh);
+  clearWorldText(mesh);
   if (mesh.geometry) mesh.geometry.dispose();
   if (Array.isArray(mesh.material)) {
     mesh.material.forEach((m) => {
@@ -4400,6 +4574,7 @@ function repDel(path) {
 
 function repAdd(p, idx) {
   if (!p || !three) return;
+  p = applyViewerOverrides(p, viewerOverrides.get(p.path));
   if (p.lights?.length) replayLightsDirty = true;
   const k = String(p.path || "");
   if (!k) return;
@@ -4413,6 +4588,7 @@ function repAdd(p, idx) {
   partMeshes.push(mesh);
   partByPath.set(k, mesh);
   addHeadLabel(mesh);
+  addWorldText(mesh, p);
   const v = renderVersion;
   if (dbg.meshBoxesOn || String(p?.className || "") !== "MeshPart") {
     applyMeshGeo(mesh, p, v);
@@ -4470,6 +4646,8 @@ function repUpd(p, idx, old) {
     repAdd(p, idx);
     return;
   }
+  old = mesh.userData.part || old;
+  p = applyViewerOverrides(p, viewerOverrides.get(k));
   if (repNeedGeo(old, p)) {
     repDel(k);
     repAdd(p, idx);
@@ -4480,6 +4658,7 @@ function repUpd(p, idx, old) {
     applyMatTex(mesh, p, v);
   }
   const previousPart = mesh.userData.part;
+  if (JSON.stringify(previousPart?.textElements || []) !== JSON.stringify(p.textElements || [])) addWorldText(mesh, p);
   if (JSON.stringify(previousPart?.lights) !== JSON.stringify(p.lights)) replayLightsDirty = true;
   mesh.userData.part = p;
   if (previousPart?.characterName !== p.characterName || previousPart?.name !== p.name) {
@@ -4589,7 +4768,10 @@ function repDraw(force = false) {
       replayExplorerSignature = nextSignature;
     } else if (selectedPath) {
       const selected = repMap?.get(selectedPath);
-      if (selected) inspectorData.textContent = safeJson(selected);
+      if (selected && !inspectorData.contains(document.activeElement)) {
+        selectedExplorerNode.properties = selected;
+        renderProperties(selectedExplorerNode);
+      }
     }
     replayExplorerDirty = false;
     replayExplorerLastAt = now;
@@ -4616,11 +4798,12 @@ function repSeek(ms, force = false) {
         latestSnapshot = repSnapRaw();
         syncLight(latestSnapshot);
         lightingData.textContent = safeJson(change.lighting);
-        if (selectedExplorerNode?.name === "Lighting") inspectorData.textContent = safeJson(change.lighting);
+        if (selectedExplorerNode?.name === "Lighting") { selectedExplorerNode.properties = change.lighting; renderProperties(selectedExplorerNode); }
       }
     },
   });
   repDraw(force);
+  replayAudio?.sync(repMs, repRun, repSpeed, three?.camera, performance.now(), force);
 }
 
 function repTick(now) {
@@ -4631,6 +4814,7 @@ function repTick(now) {
   repSeek(repMs + dt * repSpeed, false);
   if (repMs >= repDat.dur) {
     repRun = false;
+    replayAudio?.sync(repMs, false, repSpeed, three?.camera, now, true);
     repUiSync();
     return;
   }
@@ -4639,6 +4823,15 @@ function repTick(now) {
 
 function repLoad(raw) {
   cancelAnimationFrame(repAnimation);
+  viewerOverrides.clear();
+  const resetEdits = document.getElementById('resetViewerEdits');
+  if (resetEdits) resetEdits.hidden = true;
+  replayAudio?.dispose();
+  replayAudio = new ReplayAudio(raw?.soundEvents, path => partByPath.get(String(path || '')), message => {
+    const status = document.getElementById('audioStatus');
+    if (status) status.textContent = message;
+  });
+  replayAudio.setEnabled(replayAudioEnabled);
   repInterpolatedPaths.clear();
   repChatRenderedData = null;
   repChatRenderedCount = -1;
@@ -4739,6 +4932,7 @@ async function loadCur() {
 
 async function loadSnapshot() {
   assetProgressDismissed = false;
+  replayAudio?.dispose();
   const loadId = ++sceneLoad;
   displayedSceneKey = "";
   if (saveThumbnailBtn) saveThumbnailBtn.disabled = true;
@@ -4777,6 +4971,9 @@ async function loadSnapshot() {
 
   const snapshot = await res.json();
   if (loadId !== sceneLoad || curMode !== "snap") return;
+  viewerOverrides.clear();
+  const resetEdits = document.getElementById('resetViewerEdits');
+  if (resetEdits) resetEdits.hidden = true;
   if (viewerContext) viewerContext.textContent = String(snapshot?.snapshotName || snapshot?.serverName || "Snapshot");
   onResize();
   shdReady = false;
@@ -4824,7 +5021,9 @@ async function bootstrap() {
   wireClientLoggers();
   wireDebugMenu();
   addClientLog("info", "bootstrap started");
+  const fontReady = loadViewerFont();
   const threeReady = await setupThree();
+  await fontReady;
   if (!threeReady) document.getElementById("appStatus").textContent = "The 3D renderer is unavailable. Check your connection and WebGL support.";
   if (threeReady) {
     onResize();
@@ -4929,7 +5128,7 @@ function setSidebarOpen(open) {
   viewerSidebar.inert = !next;
   sidebarToggleBtn.setAttribute("aria-expanded", String(next));
   document.getElementById('viewerMenuBtn')?.setAttribute('aria-expanded', String(next));
-  if (next) sidebarCloseBtn?.focus({ preventScroll: true });
+  if (next) document.querySelector('[data-sidebar-view][aria-pressed="true"]')?.focus({ preventScroll: true });
   else if (wasOpen) document.getElementById("viewerMenuBtn")?.focus({ preventScroll: true });
 }
 
@@ -5200,6 +5399,16 @@ refreshBtn.addEventListener("click", async () => {
 });
 
 explorerSearch.addEventListener("input", () => renderExplorer());
+document.getElementById('resetViewerEdits')?.addEventListener('click', () => {
+  viewerOverrides.clear();
+  replayAudio?.overrides.clear();
+  replayAudio?.sync(repMs, repRun, repSpeed, three?.camera, performance.now(), true);
+  document.getElementById('resetViewerEdits').hidden = true;
+  if (repDat) { repBuild(false); repDraw(true); }
+  else if (latestSnapshot) drawSnap(latestSnapshot, { cam: false });
+  renderExplorer();
+  inspectorData.textContent = 'Viewer edits cleared. Select an object.';
+});
 serverSelect.addEventListener("change", loadCur);
 if (modeSelect) {
   modeSelect.addEventListener("change", async () => {
@@ -5342,6 +5551,8 @@ if (replayPlayBtn) {
     cancelAnimationFrame(repAnimation);
     if (!repRun && repMs >= repDat.dur) repSeek(0, true);
     repRun = !repRun;
+    if (repRun && replayAudioEnabled) replayAudio?.unlock();
+    replayAudio?.sync(repMs, repRun, repSpeed, three?.camera, performance.now(), true);
     repLast = 0;
     repUiSync();
     if (repRun) repAnimation = requestAnimationFrame(repTick);
@@ -5439,7 +5650,6 @@ sidebarToggleBtn?.addEventListener("click", () => {
   setSidebarView('explorer');
   setSidebarOpen(true);
 });
-sidebarCloseBtn?.addEventListener("click", () => setSidebarOpen(false));
 for (const button of document.querySelectorAll("[data-sidebar-view]")) {
   button.addEventListener("click", () => setSidebarView(button.dataset.sidebarView));
 }
@@ -5474,8 +5684,60 @@ document.getElementById("replaySpeed")?.addEventListener("change", (event) => {
   repSpeed = Number(event.target.value) || 1;
   repLast = 0;
 });
+document.getElementById('audioToggleBtn')?.addEventListener('click', event => {
+  replayAudioEnabled = !replayAudioEnabled;
+  replayAudio?.setEnabled(replayAudioEnabled);
+  if (replayAudioEnabled && repRun) { replayAudio?.unlock(); replayAudio?.sync(repMs, true, repSpeed, three?.camera, performance.now(), true); }
+  event.currentTarget.setAttribute('aria-pressed', String(replayAudioEnabled));
+  event.currentTarget.textContent = replayAudioEnabled ? 'Audio on' : 'Audio off';
+});
 document.getElementById("replayBack")?.addEventListener("click", () => repSeek(repMs - 5000, true));
 replayForward?.addEventListener("click", () => repSeek(repMs + 5000, true));
+const touchMovementSelect = document.getElementById('touchMovement');
+const touchArrows = document.querySelector('.touch-controls');
+const touchJoystickControls = document.getElementById('touchJoystickControls');
+const touchJoystick = document.getElementById('touchJoystick');
+const joystickThumb = document.getElementById('joystickThumb');
+function releaseJoystick() {
+  joystickInput.pointerId = null;
+  joystickInput.x = 0;
+  joystickInput.y = 0;
+  if (joystickThumb) joystickThumb.style.transform = 'translate(-50%, -50%)';
+}
+function setTouchMovement(value) {
+  const joystick = value === 'joystick';
+  releaseJoystick();
+  pressedKeys.clear();
+  studioFlyActive = false;
+  if (touchArrows) touchArrows.hidden = joystick;
+  if (touchJoystickControls) touchJoystickControls.hidden = !joystick;
+  if (touchMovementSelect) touchMovementSelect.value = joystick ? 'joystick' : 'arrows';
+  try { localStorage.setItem('replaymod-touch-movement', joystick ? 'joystick' : 'arrows'); } catch {}
+}
+let initialTouchMovement = 'arrows';
+try { initialTouchMovement = localStorage.getItem('replaymod-touch-movement') || 'arrows'; } catch {}
+setTouchMovement(initialTouchMovement);
+touchMovementSelect?.addEventListener('change', event => setTouchMovement(event.target.value));
+function moveJoystick(event) {
+  if (event.pointerId !== joystickInput.pointerId || !touchJoystick) return;
+  const rect = touchJoystick.getBoundingClientRect();
+  const radius = Math.min(rect.width, rect.height) * 0.32;
+  const next = joystickVector(event.clientX - (rect.left + rect.width / 2), event.clientY - (rect.top + rect.height / 2), radius);
+  joystickInput.x = next.x;
+  joystickInput.y = next.y;
+  if (joystickThumb) joystickThumb.style.transform = `translate(calc(-50% + ${next.x * radius}px), calc(-50% + ${next.y * radius}px))`;
+}
+touchJoystick?.addEventListener('pointerdown', event => {
+  if (joystickInput.pointerId !== null) return;
+  event.preventDefault();
+  joystickInput.pointerId = event.pointerId;
+  touchJoystick.setPointerCapture(event.pointerId);
+  moveJoystick(event);
+});
+touchJoystick?.addEventListener('pointermove', moveJoystick);
+for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+  touchJoystick?.addEventListener(type, event => { if (event.pointerId === joystickInput.pointerId) releaseJoystick(); });
+}
 for (const button of document.querySelectorAll("[data-move]")) {
   button.addEventListener("pointerdown", (event) => {
     event.preventDefault();
@@ -5487,7 +5749,8 @@ for (const button of document.querySelectorAll("[data-move]")) {
   for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) button.addEventListener(type, release);
 }
 
-document.addEventListener("visibilitychange", () => { repLast = 0; pressedKeys.clear(); studioFlyActive = false; });
+document.addEventListener("visibilitychange", () => { repLast = 0; pressedKeys.clear(); studioFlyActive = false; releaseJoystick(); });
+window.addEventListener('blur', () => { pressedKeys.clear(); studioFlyActive = false; releaseJoystick(); });
 
 function repCameraPair() {
   return repDat?.cameraPair(repMs) || null;

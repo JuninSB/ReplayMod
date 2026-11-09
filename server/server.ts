@@ -93,6 +93,11 @@ const mime: Record<string, string> = {
   ".obj": "model/obj",
   ".glb": "model/gltf-binary",
   ".dds": "image/vnd-ms.dds",
+  ".mp3": "audio/mpeg",
+  ".ogg": "audio/ogg",
+  ".wav": "audio/wav",
+  ".m4a": "audio/mp4",
+  ".flac": "audio/flac",
 };
 const legacyContentDir = path.resolve(
   process.env.SERVER_WEBVIEW_CONTENT_DIR || path.join(root, "content"),
@@ -122,8 +127,9 @@ function clientContentRoots(): string[] {
     ]),
   ];
 }
-function assetCacheDirs(kind: "mesh" | "texture"): string[] {
-  const bucket = kind === "mesh" ? "meshes" : "textures";
+function assetCacheDirs(kind: "mesh" | "texture" | "audio"): string[] {
+  const bucket =
+    kind === "mesh" ? "meshes" : kind === "audio" ? "audio" : "textures";
   return [
     path.join(assetDeliveryDir, bucket),
     ...legacyContentDirs.map((dir) => path.join(dir, "cache", "node")),
@@ -243,6 +249,25 @@ function validReplay(v: Json): string | null {
   }
   if (v.chatEvents !== undefined && !Array.isArray(v.chatEvents))
     return "invalid chat events";
+  if (v.soundEvents !== undefined) {
+    if (!Array.isArray(v.soundEvents) || v.soundEvents.length > 20000)
+      return "invalid sound events";
+    let last = -1;
+    for (const event of v.soundEvents) {
+      if (
+        !obj(event) ||
+        typeof event.id !== "string" ||
+        event.id.length > 128 ||
+        typeof event.soundId !== "string" ||
+        event.soundId.length > 2048 ||
+        !Number.isFinite(Number(event.t)) ||
+        Number(event.t) < last ||
+        Number(event.t) > duration
+      )
+        return "invalid sound event";
+      last = Number(event.t);
+    }
+  }
   return null;
 }
 function expandFrameBlocks(v: Json): Json {
@@ -510,7 +535,7 @@ async function localAsset(src: string): Promise<string | null> {
 async function asset(
   res: ServerResponse,
   src: string,
-  kind: "mesh" | "texture",
+  kind: "mesh" | "texture" | "audio",
 ): Promise<void> {
   if (!src) return fail(res, "src is required");
   const local = await localAsset(src);
@@ -524,7 +549,8 @@ async function asset(
         body,
         kind === "mesh"
           ? "model/obj"
-          : mime[path.extname(local).toLowerCase()] || "image/png",
+          : mime[path.extname(local).toLowerCase()] ||
+              (kind === "audio" ? "application/octet-stream" : "image/png"),
         600,
       );
     } catch {
@@ -587,6 +613,21 @@ async function asset(
       )
         type = "image/webp";
       if (!type.startsWith("image/")) continue;
+    } else if (kind === "audio") {
+      if (body.subarray(0, 4).toString() === "OggS") type = "audio/ogg";
+      else if (
+        body.subarray(0, 3).toString() === "ID3" ||
+        (body[0] === 0xff && (body[1] & 0xe0) === 0xe0)
+      )
+        type = "audio/mpeg";
+      else if (
+        body.subarray(0, 4).toString() === "RIFF" &&
+        body.subarray(8, 12).toString() === "WAVE"
+      )
+        type = "audio/wav";
+      else if (body.subarray(4, 8).toString() === "ftyp") type = "audio/mp4";
+      else if (body.subarray(0, 4).toString() === "fLaC") type = "audio/flac";
+      else continue;
     } else {
       if (type.startsWith("text/html") || type === "application/json") continue;
       if (body.subarray(0, 8).toString() === "version ") {
@@ -726,12 +767,14 @@ async function handle(
   }
   if (
     method === "GET" &&
-    (p === "/api/asset/texture" || p === "/api/asset/mesh")
+    (p === "/api/asset/texture" ||
+      p === "/api/asset/mesh" ||
+      p === "/api/asset/audio")
   )
     return asset(
       res,
       str(url.searchParams.get("src")),
-      p.endsWith("mesh") ? "mesh" : "texture",
+      p.endsWith("mesh") ? "mesh" : p.endsWith("audio") ? "audio" : "texture",
     );
   if (method === "GET" && p === "/api/material/map") {
     const material = str(url.searchParams.get("material"))

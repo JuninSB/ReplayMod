@@ -33,6 +33,18 @@ SpecialMesh MeshType is recorded independently from MeshId. A built-in R6 Head i
 
 New captures read a bounded 160 × 96 × 160 stud region around the local player (or camera fallback) at Roblox's required 4-stud voxel resolution. Only exposed voxels are saved; the viewer emits only their outward faces and groups them by material. This makes terrain rocks and hills visible without creating a draw call for every voxel. It is a coarse block reconstruction: smooth terrain blending, water behavior, decorations, custom terrain textures, terrain changes during the replay, and terrain beyond the captured window are not reproduced. Existing captures without `base.terrain` must be recorded again.
 
+## Sky and scene text
+
+The viewer uses bundled sun, moon and cloud images as fallbacks and approximates SunRays as a screen-space effect. New recordings include custom Sky sun and moon texture IDs; old recordings fall back to the bundled images. Clouds and SunRays are approximations, not Roblox volumetric clouds or physically exact occlusion.
+
+Nameplates use the bundled Builder Sans font when available. New recordings also capture visible TextLabel and TextButton text in SurfaceGui or BillboardGui attached directly to a part, including text color, transparency and font. Builder Sans, Source Sans, Roboto and Gotham/Montserrat use bundled fonts; other font families fall back to Builder Sans. Text placement and layout are approximated, with a maximum of 32 text elements per part. ScreenGui, rich text, GUI backgrounds, nested layout and an Adornee pointing elsewhere are not reproduced. Older recordings do not have these captured text elements.
+
+## Replay audio and Explorer
+
+New replay recordings observe Sound events and settings from Workspace and SoundService, including local `rbxasset://sounds/` files. Playback follows the replay clock, playback speed, pause and seeking. Sounds attached to captured parts or attachments use browser spatial audio; global sounds are non-positional. Browser autoplay rules require a user action. Audio access, codec support, client replication, SoundGroups, advanced audio graphs, playback regions and effects can differ from Roblox. Missing or inaccessible assets are reported and may be omitted after confirmation during offline export. Older replays contain no sound events.
+
+Explorer expands the recorded part hierarchy and captured child instances; new recordings include a bounded child tree and instance paths. Older recordings can only show the information they already contain. Part name, color, transparency, position, orientation and size can be edited in the viewer. Captured sounds also expose editable volume, playback speed, looping and rolloff distances. Edits persist while playing and seeking and can be reset, but do not modify the saved recording or the Roblox game. Other properties are read-only; this is not a complete instance inspector.
+
 ## Loading and retries
 
 The viewer deduplicates asset requests and keeps successful results while rebuilding scene objects. Each failed asset is tried twice automatically. The progress panel shows mesh and texture counts and a failed-asset list; Retry requests only failures. Close dismisses the panel for the current capture, and Menu → Loading status reopens it. Optional missing material maps use existing material fallbacks. Offline export tries each asset three times before presenting the missing list and Export anyway.

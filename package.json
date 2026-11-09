@@ -24,6 +24,6 @@
   },
   "dependencies": {
     "draco3d": "^1.5.9",
-    "three": "^0.161.0"
+    "three": "^0.187.0"
   }
 }

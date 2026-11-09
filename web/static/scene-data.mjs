@@ -34,9 +34,12 @@ export function normalizePart(raw) {
 
   return {
     path: String(readAny(raw, ["path", "Path"]) || ""),
+    instancePath: String(raw.instancePath || ""),
+    childInstances: Array.isArray(raw.childInstances) ? raw.childInstances : [],
     name: String(readAny(raw, ["name", "Name"]) || ""),
     characterName: String(readAny(raw, ["characterName", "CharacterName"]) || ""),
     lights: Array.isArray(raw.lights) ? raw.lights : [],
+    textElements: Array.isArray(raw.textElements) ? raw.textElements : [],
     nameDisplayDistance: toNum(raw.nameDisplayDistance,100),
     showName: raw.showName !== false,
     characterHealth: raw.characterHealth == null ? null : toNum(raw.characterHealth, 0),

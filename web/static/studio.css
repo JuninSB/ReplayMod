@@ -675,6 +675,13 @@ body.sidebar-open .viewer-sidebar {
 .sidebar-pane h3 {
   margin-top: 18px;
 }
+.properties-panel { display: grid; gap: 4px; min-width: 0; padding-bottom: 16px; }
+.properties-note { color: var(--muted); font-size: 11px; line-height: 1.4; margin: 2px 0 8px; }
+.property-row { display: grid; grid-template-columns: minmax(90px, 40%) minmax(0, 1fr); align-items: center; gap: 8px; min-height: 32px; font-size: 12px; }
+.property-row span { overflow-wrap: anywhere; color: var(--muted); }
+.property-row input { min-width: 0; width: 100%; padding: 6px; border-radius: 5px; border: 1px solid #435263; background: #171c23; color: var(--text); }
+.property-row input[readonly] { border-color: transparent; color: #b9c4ce; }
+.property-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: #7ce6bd; }
 .explorer-tree {
   max-height: none;
   min-height: 120px;
@@ -1054,6 +1061,7 @@ body.is-viewer .topbar {
   min-height: 44px;
   padding: 6px 10px;
   pointer-events: none;
+  z-index: 25;
 }
 body.is-viewer .topbar button,
 body.is-viewer .viewer-menu {
@@ -1089,6 +1097,7 @@ body.is-viewer .viewer-menu-heading {
   font-weight: 600;
   padding: 4px 2px 0;
 }
+body.is-viewer .audio-status { grid-column: 1 / -1; margin: 0; color: #f2b5a6; font-size: 12px; overflow-wrap: anywhere; }
 body.is-viewer .viewer-menu #mobileToolsBtn {
   display: none !important;
 }
@@ -1145,6 +1154,7 @@ body.is-viewer .viewer-sidebar {
   width: min(370px, calc(100vw - 16px));
   padding: 12px;
 }
+body.is-viewer .sidebar-header { padding-right: 74px; }
 body.is-viewer .sidebar-nav { overflow-x: auto; flex-shrink: 0; }
 body.is-viewer .sidebar-nav button { flex: 0 0 auto; padding: 6px 9px; font-size: 12px; }
 body.is-viewer #sidebarScenePane .viewer-menu {
@@ -1239,6 +1249,22 @@ body.is-ui-hidden .topbar,
 body.is-ui-hidden .viewer-sidebar,
 body.is-ui-hidden .replay-bar,
 body.is-ui-hidden .touch-controls,
+body.is-ui-hidden .touch-joystick,
 body.is-ui-hidden .asset-progress,
 body.is-ui-hidden #fpsOverlay,
 body.is-ui-hidden .thumb-hint { display: none !important; }
+
+.touch-controls[hidden], .touch-joystick[hidden] { display: none !important; }
+.touch-joystick { display: none; position: absolute; left: 14px; bottom: 100px; z-index: 4; gap: 10px; align-items: center; }
+.joystick-base { position: relative; width: 112px; height: 112px; border-radius: 50%; border: 1px solid #91a6b5a0; background: #171c2399; touch-action: none; user-select: none; }
+.joystick-thumb { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; border-radius: 50%; border: 1px solid #d7e3e8aa; background: #a0b1bacc; transform: translate(-50%, -50%); pointer-events: none; }
+.joystick-height { display: grid; gap: 8px; }
+.joystick-height button { width: 42px; height: 42px; touch-action: none; }
+@media (pointer: coarse) { .touch-joystick:not([hidden]) { display: flex; } }
+@media (max-width: 900px) { body.is-viewer .touch-joystick { bottom: 128px; } }
+@media (max-height: 540px) and (orientation: landscape) {
+  body.is-viewer .touch-joystick { bottom: 65px; }
+  .joystick-base { width: 88px; height: 88px; }
+  .joystick-thumb { width: 36px; height: 36px; }
+  .joystick-height button { width: 38px; height: 38px; }
+}

@@ -6,6 +6,97 @@ const { readFileSync } = require("node:fs");
 const { spawnSync } = require("node:child_process");
 const vm = require("node:vm");
 
+test("joystick clamps movement and has a dead zone", async () => {
+  const { joystickVector } = await import('../web/static/touch-joystick.mjs');
+  assert.deepEqual(joystickVector(1, 1, 50), { x: 0, y: 0 });
+  const moved = joystickVector(60, 80, 50);
+  assert.ok(Math.abs(moved.x - 0.6) < 1e-9);
+  assert.ok(Math.abs(moved.y - 0.8) < 1e-9);
+});
+
+test("world text survives replay updates and can be cleared", async () => {
+  const { normalizePart } = await import('../web/static/scene-data.mjs');
+  const { ReplayTimeline } = await import('../web/static/replay-timeline.mjs');
+  const element = { text: 'Hello', font: 'Enum.Font.SourceSans', color3: '#ffffff', kind: 'SurfaceGui', face: 'Front' };
+  const part = { path: 'sign', name: 'Sign', size: { x: 4, y: 2, z: 1 }, position: { x: 0, y: 0, z: 0 }, textElements: [element] };
+  const timeline = new ReplayTimeline({ base: { parts: [part] }, durationMs: 100, frames: [{ t: 50, u: [{ path: 'sign', textElements: false }] }] }, normalizePart);
+  assert.equal(timeline.map.get('sign').textElements[0].text, 'Hello');
+  timeline.seek(50);
+  assert.deepEqual(timeline.map.get('sign').textElements, []);
+});
+
+test("sound events reconstruct seek position, looping and stopping", async () => {
+  const { ReplayAudio, soundStatesAt, soundOffsetAt } = await import('../web/static/replay-audio.mjs');
+  const events = [
+    { id: 'a', t: 0, event: 'play', playing: true, timePosition: 1, playbackSpeed: 2, looped: true, timeLength: 4 },
+    { id: 'a', t: 3000, event: 'stop', playing: false },
+  ];
+  assert.equal(soundOffsetAt(events[0], 2000), 1);
+  assert.equal(soundStatesAt(events, 1000).size, 1);
+  assert.equal(soundStatesAt(events, 3000).size, 0);
+  const player = new ReplayAudio(events, () => null);
+  assert.equal(player.statesAt(3000).size, 0);
+  assert.equal(player.statesAt(1000).size, 1);
+});
+
+test("viewer edits keep invisible objects visible across playback updates without modifying recorded state", async () => {
+  const { applyViewerOverrides } = await import('../web/static/viewer-overrides.mjs');
+  const THREE = require('three');
+  const source = readFileSync(path.join(__dirname, '../web/static/app.js'), 'utf8');
+  const viewerOverrides = new Map([['part_1', { transparency: 0, position: { x: 7 } }]]);
+  const context = vm.createContext({ THREE, applyViewerOverrides, viewerOverrides });
+  vm.runInContext(source.slice(source.indexOf('function repLerp('), source.indexOf('function repNeedGeo(')), context);
+  context.mesh = new THREE.Mesh();
+  const before = { path: 'part_1', position: { x: 1, y: 2, z: 3 }, orientation: {}, transparency: 1 };
+  const after = { path: 'part_1', position: { x: 2, y: 4, z: 3 }, orientation: {}, transparency: 1 };
+  context.before = before; context.after = after;
+  vm.runInContext('repSet(mesh, after, 0.5, before)', context);
+  assert.equal(context.mesh.material.opacity, 1);
+  assert.equal(context.mesh.position.x, 7);
+  assert.equal(context.mesh.position.y, 3);
+  assert.equal(after.transparency, 1);
+  assert.equal(after.position.x, 2);
+});
+
+test("replay audio follows timeline pause, speed and a moving spatial source", async () => {
+  const { ReplayAudio } = await import('../web/static/replay-audio.mjs');
+  const THREE = require('three');
+  class FakeAudio {
+    constructor(url) { this.url = url; this.paused = true; this.currentTime = 0; }
+    addEventListener() {} removeAttribute() {} load() {}
+    pause() { this.paused = true; }
+    play() { this.paused = false; return Promise.resolve(); }
+  }
+  const wire = () => ({ connect() {}, disconnect() {} });
+  class FakeContext {
+    constructor() { this.destination = {}; this.listener = { setPosition() {}, setOrientation() {} }; }
+    resume() { return Promise.resolve(); }
+    createMediaElementSource() { return wire(); }
+    createGain() { return { ...wire(), gain: { value: 0 } }; }
+    createPanner() { return { ...wire(), setPosition(x, y, z) { this.point = [x, y, z]; } }; }
+  }
+  const previousAudio = globalThis.Audio, previousContext = globalThis.AudioContext;
+  globalThis.Audio = FakeAudio; globalThis.AudioContext = FakeContext;
+  try {
+    const part = new THREE.Object3D(); part.position.set(10, 0, 0); part.updateMatrixWorld();
+    const camera = new THREE.PerspectiveCamera();
+    const player = new ReplayAudio([{ id: 's', t: 0, event: 'play', soundId: 'rbxasset://sounds/action_jump.mp3', playing: true, timePosition: 1, playbackSpeed: 1.5, volume: 0.5, spatial: true, partPath: 'p', offset: { x: 2, y: 0, z: 0 } }], () => part);
+    player.unlock(); player.sync(2000, true, 2, camera, 1000, true);
+    const node = player.nodes.get('s');
+    assert.equal(node.audio.currentTime, 4);
+    assert.equal(node.audio.playbackRate, 3);
+    assert.equal(node.gain.gain.value, 0.5);
+    assert.deepEqual(node.panner.point, [12, 0, 0]);
+    player.overrides.set('s', { volume: 0.25, playbackSpeed: 0.5 });
+    player.sync(2000, true, 2, camera, 1050, true);
+    assert.equal(node.audio.playbackRate, 1);
+    assert.equal(node.gain.gain.value, 0.25);
+    player.sync(2000, false, 2, camera, 1100, true);
+    assert.equal(node.audio.paused, true);
+    player.stop();
+  } finally { globalThis.Audio = previousAudio; globalThis.AudioContext = previousContext; }
+});
+
 test("shadow range limits distant shadows without overriding disabled casters", async () => {
   const {partCastsNearby} = await import("../web/static/shadow-range.mjs");
   const camera = {x:0,y:0,z:0};
@@ -94,6 +185,7 @@ test("offline export includes the complete viewer module graph and capture asset
   const { collectModules, captureAssets, offlineCaptureRow } = await import("../web/static/offline-export.mjs");
   const modules = await collectModules("/static/app.js", file => Promise.resolve(readFileSync(path.join(__dirname, "../web", file), "utf8")));
   assert.ok(modules["/static/vendor/three/build/three.module.js"]);
+  assert.ok(modules["/static/vendor/three/build/three.core.js"]);
   assert.ok(modules["/static/vendor/three/examples/jsm/loaders/OBJLoader.js"]);
   for (const source of Object.values(modules)) {
     for (const match of source.matchAll(/["']offline:(\/static\/[^"']+)["']/g)) assert.ok(modules[match[1]], match[1]);
@@ -101,6 +193,8 @@ test("offline export includes the complete viewer module graph and capture asset
   const { required } = captureAssets({base:{parts:[{meshId:"rbxassetid://123 ", textureId:"rbxassetid://456", clothing:{shirt:"rbxassetid://789"}}]},frames:[{u:[{textureId:"rbxassetid://999"}]}]});
   assert.equal(required.size, 4);
   assert.ok(required.has("/api/asset/mesh?src=rbxassetid%3A%2F%2F123"));
+  assert.ok(captureAssets({lighting:{sky:{sunTextureId:'rbxassetid://1234'}}}).required.has('/api/asset/texture?src=rbxassetid%3A%2F%2F1234'));
+  assert.ok(captureAssets({soundEvents:[{soundId:'rbxasset://sounds/action_jump.mp3'}]}).required.has('/api/asset/audio?src=rbxasset%3A%2F%2Fsounds%2Faction_jump.mp3'));
   assert.deepEqual(
     offlineCaptureRow({ mode: "rep", id: "replay-1", capture: { replayName: "One" } }),
     { replayName: "One", thumbnailUrl: null, replayId: "replay-1" },
@@ -114,7 +208,7 @@ test("offline export includes the complete viewer module graph and capture asset
 test("recorded YXZ orientation keeps the limb rotation axes correct", () => {
   const THREE = require("three");
   const source = readFileSync(path.join(__dirname, "../web/static/app.js"), "utf8");
-  const context = vm.createContext({ THREE });
+  const context = vm.createContext({ THREE, applyViewerOverrides: (part) => part, viewerOverrides: new Map() });
   vm.runInContext(source.slice(source.indexOf("function repLerp("), source.indexOf("function repNeedGeo(")), context);
   context.mesh = new THREE.Mesh();
   vm.runInContext('repSet(mesh, {position:{}, orientation:{x:90,y:90,z:0}})', context);

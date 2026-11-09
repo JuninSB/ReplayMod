@@ -210,6 +210,9 @@ minimize.Activated:Connect(function()
 end)
 local connections, watch, decalWatch = {}, {}, {}
 local graphicsWatch, clothingWatch = {}, {}
+local soundWatch = {}
+local soundIds = setmetatable({}, {__mode = "k"})
+local nextSoundId = 0
 local ids = setmetatable({}, {__mode = "k"})
 local decalIds = setmetatable({}, {__mode = "k"})
 local nextId, nextDecalId, started, partCount = 0, 0, 0, 0
@@ -364,6 +367,19 @@ local function watchClothing(inst)
         if recording or preparing then markClothedParts(inst.Parent) end
     end)
 end
+local function watchWorldText(inst)
+    if graphicsWatch[inst] then return end
+    local gui = inst:IsA("SurfaceGui") or inst:IsA("BillboardGui")
+    local text = inst:IsA("TextLabel") or inst:IsA("TextButton")
+    if not gui and not text then return end
+    local owner = gui and inst or inst:FindFirstAncestorWhichIsA("SurfaceGui") or inst:FindFirstAncestorWhichIsA("BillboardGui")
+    local part = owner and owner.Parent
+    if not part or not part:IsA("BasePart") or not tracked[part] then return end
+    if recording or preparing then mark(part, "full") end
+    graphicsWatch[inst] = inst.Changed:Connect(function()
+        if tracked[part] and (recording or preparing) then mark(part, "full") end
+    end)
+end
 local function track(inst, initial)
     if not inst:IsA("BasePart") or inst:IsA("Terrain") or tracked[inst] then return end
     tracked[inst] = true
@@ -391,6 +407,59 @@ local function track(inst, initial)
 end
 local function elapsedMs()
     return math.floor((os.clock() - started - pausedTotal - (paused and (os.clock() - pausedAt) or 0)) * 1000)
+end
+local function soundIdOf(sound)
+    if not soundIds[sound] then nextSoundId += 1; soundIds[sound] = "sound_" .. tostring(nextSoundId) end
+    return soundIds[sound]
+end
+local function emitSoundState(sound, eventName)
+    if not recording or paused or not captured or #captured.soundEvents >= 20000 then return end
+    local parent = sound.Parent
+    local attachment = parent and parent:IsA("Attachment") and parent or nil
+    local part = attachment and attachment.Parent or parent
+    local spatial = part and part:IsA("BasePart") and tracked[part]
+    local row = {t = elapsedMs(), id = soundIdOf(sound), event = eventName, instancePath = pth(sound), soundId = tostring(sound.SoundId),
+        playing = sound.IsPlaying, timePosition = sound.TimePosition, timeLength = sound.TimeLength,
+        volume = sound.Volume, playbackSpeed = sound.PlaybackSpeed, looped = sound.Looped,
+        rollOffMinDistance = sound.RollOffMinDistance, rollOffMaxDistance = sound.RollOffMaxDistance,
+        rollOffMode = tostring(sound.RollOffMode), emitterSize = sound.EmitterSize,
+        spatial = not not spatial, partPath = spatial and idOf(part) or ""}
+    if attachment and spatial then row.offset = v3(attachment.Position) end
+    table.insert(captured.soundEvents, row)
+end
+local function watchSound(sound)
+    if not sound:IsA("Sound") or soundWatch[sound] then return end
+    local watchers = {}
+    soundWatch[sound] = watchers
+    local parent = sound.Parent
+    if parent and parent:IsA("Attachment") then parent = parent.Parent end
+    if parent and tracked[parent] and (recording or preparing) then mark(parent, "full") end
+    local function on(signal, name)
+        table.insert(watchers, signal:Connect(function() emitSoundState(sound, name) end))
+    end
+    on(sound.Played, "play")
+    on(sound.Resumed, "resume")
+    on(sound.Paused, "pause")
+    on(sound.Stopped, "stop")
+    on(sound.Ended, "end")
+    on(sound.DidLoop, "loop")
+    table.insert(watchers, sound.Changed:Connect(function(property)
+        if property == "SoundId" or property == "Volume" or property == "PlaybackSpeed" or property == "Looped"
+            or property == "RollOffMinDistance" or property == "RollOffMaxDistance" or property == "RollOffMode" or property == "Parent" then
+            emitSoundState(sound, "change")
+        end
+    end))
+    if recording and not paused and sound.IsPlaying then emitSoundState(sound, "play") end
+end
+local function unwatchSound(sound)
+    local watchers = soundWatch[sound]
+    if not watchers then return end
+    local parent = sound.Parent
+    if parent and parent:IsA("Attachment") then parent = parent.Parent end
+    if parent and tracked[parent] and (recording or preparing) then task.defer(function() if tracked[parent] and (recording or preparing) then mark(parent, "full") end end) end
+    if recording and not paused then emitSoundState(sound, "removed") end
+    for _, connection in ipairs(watchers) do connection:Disconnect() end
+    soundWatch[sound] = nil
 end
 local function flushFrameBuffer()
     if not captured or #frameBuffer == 0 then return end
@@ -505,6 +574,7 @@ local function readLighting()
             skyboxOrientation = v3(sky.SkyboxOrientation),
             starCount = sky.StarCount, celestialBodiesShown = sky.CelestialBodiesShown,
             sunAngularSize = sky.SunAngularSize, moonAngularSize = sky.MoonAngularSize,
+            sunTextureId = tostring(sky.SunTextureId), moonTextureId = tostring(sky.MoonTextureId),
         }
     end
     local clouds = workspace.Terrain:FindFirstChildOfClass("Clouds")
@@ -574,7 +644,7 @@ local function partPatch(inst, id, props)
                 changed = true
             end
         end
-        for _, key in ipairs({"meshId", "meshType", "rigType", "textureId", "meshScale", "meshOffset", "surfaceAppearance", "characterName", "clothing", "lights"}) do
+        for _, key in ipairs({"meshId", "meshType", "rigType", "textureId", "meshScale", "meshOffset", "surfaceAppearance", "characterName", "clothing", "lights", "textElements", "childInstances"}) do
             if data[key] == nil and prior[key] ~= nil then
                 local cleared = (key == "meshId" or key == "textureId" or key == "characterName") and "" or false
                 if not sameValue(prior[key], cleared) then
@@ -816,7 +886,7 @@ local function begin()
     action.Text = "Preparing…"
     local initialCamera = readCamera()
     captured = {kind = captureMode, stepMs = 1000 / captureFps, captureFps = captureFps, tickChanges = {}, serverId = srvId(), placeId = game.PlaceId, replayName = nameInput.Text, snapshotName = nameInput.Text,
-        base = {parts = {}, decals = {}, camera = initialCamera, lighting = readLighting(), terrain = readTerrain(initialCamera)}, frameBlocks = {}, chatEvents = {}}
+        base = {parts = {}, decals = {}, camera = initialCamera, lighting = readLighting(), terrain = readTerrain(initialCamera)}, frameBlocks = {}, chatEvents = {}, soundEvents = {}}
     lastLighting = captured.base.lighting
     encodedChunks = nil
     frameBuffer, frameBufferBytes = {}, 0
@@ -839,6 +909,10 @@ local function begin()
             trackDecal(inst, true)
         elseif isClothing(inst) then
             watchClothing(inst)
+        elseif inst:IsA("SurfaceGui") or inst:IsA("BillboardGui") or inst:IsA("TextLabel") or inst:IsA("TextButton") then
+            watchWorldText(inst)
+        elseif inst:IsA("Sound") then
+            watchSound(inst)
         end
     end)
     if not completed then return end
@@ -878,8 +952,10 @@ local function begin()
     statsAt, statsSamples = os.clock(), 0
     pausedTotal = 0
     paused = false
+    for _, sound in ipairs(game:GetService("SoundService"):GetDescendants()) do if sound:IsA("Sound") then watchSound(sound) end end
     recording = true
     preparing = false
+    for sound in pairs(soundWatch) do if sound.IsPlaying then emitSoundState(sound, "initial") end end
     baseIndices, baseInstances, baseDecals, baseDecalSeen = {}, {}, {}, {}
     if captureMode == "snapshot" then
         recording = false
@@ -927,9 +1003,19 @@ connections[#connections + 1] = workspace.DescendantAdded:Connect(function(inst)
     elseif isClothing(inst) then
         watchClothing(inst)
         if recording or preparing then markClothedParts(inst.Parent) end
+    elseif inst:IsA("SurfaceGui") or inst:IsA("BillboardGui") or inst:IsA("TextLabel") or inst:IsA("TextButton") then
+        watchWorldText(inst)
+    elseif inst:IsA("Sound") then
+        watchSound(inst)
     end
 end)
 connections[#connections + 1] = workspace.DescendantRemoving:Connect(function(inst)
+    if inst:IsA("Sound") then unwatchSound(inst) end
+    if (recording or preparing) and (inst:IsA("SurfaceGui") or inst:IsA("BillboardGui") or inst:IsA("TextLabel") or inst:IsA("TextButton")) then
+        local owner = (inst:IsA("SurfaceGui") or inst:IsA("BillboardGui")) and inst or inst:FindFirstAncestorWhichIsA("SurfaceGui") or inst:FindFirstAncestorWhichIsA("BillboardGui")
+        local part = owner and owner.Parent
+        if part and tracked[part] then task.defer(function() if tracked[part] and (recording or preparing) then mark(part, "full") end end) end
+    end
     if trackedDecals[inst] then
         trackedDecals[inst] = nil
         if decalWatch[inst] then decalWatch[inst]:Disconnect(); decalWatch[inst] = nil end
@@ -957,6 +1043,9 @@ connections[#connections + 1] = workspace.DescendantRemoving:Connect(function(in
         table.insert(removedQueue, id)
     end
 end)
+local soundService = game:GetService("SoundService")
+connections[#connections + 1] = soundService.DescendantAdded:Connect(function(inst) if inst:IsA("Sound") then watchSound(inst) end end)
+connections[#connections + 1] = soundService.DescendantRemoving:Connect(function(inst) if inst:IsA("Sound") then unwatchSound(inst) end end)
 local chatService = game:GetService("TextChatService")
 connections[#connections + 1] = chatService.MessageReceived:Connect(function(message)
     if not recording or paused or not captured then return end
@@ -1023,7 +1112,7 @@ local function chunksForCapture()
             append((i > 1 and "," or "") .. hs:JSONEncode(block))
             if i % 20 == 0 then task.wait() end
         end
-        append('],"chatEvents":' .. hs:JSONEncode(captured.chatEvents) .. '}')
+        append('],"chatEvents":' .. hs:JSONEncode(captured.chatEvents) .. ',"soundEvents":' .. hs:JSONEncode(captured.soundEvents) .. '}')
     end
     if #current > 0 then table.insert(chunks, current) end
     encodedChunks = chunks
@@ -1180,6 +1269,7 @@ connections[#connections + 1] = action.Activated:Connect(function()
                 pausedTotal += os.clock() - pausedAt
                 paused = false
                 preparing = false
+                for sound in pairs(soundWatch) do emitSoundState(sound, "resync") end
                 statsAt, statsSamples = os.clock(), 0
                 action.Text = "Pause recording"
                 status.Text = "● Recording at " .. tostring(captureFps) .. " ticks/s"
@@ -1248,6 +1338,7 @@ local function destroy()
     for _, connection in pairs(decalWatch) do connection:Disconnect() end
     for _, connection in pairs(graphicsWatch) do connection:Disconnect() end
     for _, connection in pairs(clothingWatch) do connection:Disconnect() end
+    for sound in pairs(soundWatch) do unwatchSound(sound) end
     gui:Destroy()
     env.ReplayMod = nil
     return true
