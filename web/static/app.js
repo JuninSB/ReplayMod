@@ -9,6 +9,7 @@ import { ReplayAudio } from "./replay-audio.mjs";
 import { ScreenGuiView } from "./screen-gui.mjs";
 import { applyViewerOverrides } from "./viewer-overrides.mjs";
 import { applyMeshSizing } from "./mesh-sizing.mjs";
+import { decodeDxt1DDS, surfaceKind, surfaceRepeats, surfacePixels } from "./surface-patterns.mjs";
 import { downloadOffline, offlineCaptureRow } from "./offline-export.mjs?v=offline-3";
 import { toNum, toVec3, readAny, normalizePart, faceName, visibleDecalTexture, isCharHead, textureProxy, textureFetchUrl, meshProxy, usesBoxFaceMaterials } from "./scene-data.mjs?v=render-20261109-2";
 import { setCameraVisibility, cameraSees } from "./render-visibility.mjs";
@@ -232,7 +233,7 @@ const assetLoads = new AssetLoads(() => renderAssetProgress(), 6, job => {
   }
 });
 let fpsOverlayEl = null;
-let studsPatternTexture = null;
+let surfacePatternsPromise = null;
 let skyVisuals = null;
 let skyState = null;
 let starSignature = -1;
@@ -1119,27 +1120,17 @@ function loadLegacyMatTex(rawMaterial) {
   return promise;
 }
 
-function hasStudsSurface(part) {
+function hasSurfacePattern(part) {
   if (!part) return false;
-  const values = [
-    part.topSurface,
-    part.bottomSurface,
-    part.leftSurface,
-    part.rightSurface,
-    part.frontSurface,
-    part.backSurface,
-  ];
-  return values.some(isStudFace);
-}
-
-function isStudFace(v) {
-  const s = String(v || "").toLowerCase();
-  return s.includes("studs") || s.includes("inlet");
+  return [part.topSurface, part.bottomSurface, part.leftSurface, part.rightSurface, part.frontSurface, part.backSurface].some(value => {
+    const kind = surfaceKind(value);
+    return Boolean(kind && (isPlasticMat(part.material) || ['hinge', 'motor', 'steppingmotor'].includes(kind)));
+  });
 }
 
 function isPlasticMat(rawMaterial) {
   const n = normKey(normMat(rawMaterial));
-  return n === "plastic" || n === "smoothplastic";
+  return n === "plastic";
 }
 
 function clearStudOverlay(mesh) {
@@ -1494,107 +1485,91 @@ function addLights(snapshot) {
   }
 }
 
-function getStudTex() {
-  if (!THREE) return null;
-  if (studsPatternTexture) return studsPatternTexture;
-
-  const size = 128;
+function fallbackStudPixels() {
   const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = canvas.height = 128;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-
-  ctx.fillStyle = "#f1f1f1";
-  ctx.fillRect(0, 0, size, size);
-
-  const cols = 3;
-  const rows = 3;
-  const stepX = size / cols;
-  const stepY = size / rows;
-  for (let y = 0; y < rows; y += 1) {
-    for (let x = 0; x < cols; x += 1) {
-      const side = Math.min(stepX, stepY) * 0.6;
-      const left = x * stepX + (stepX - side) / 2;
-      const top = y * stepY + (stepY - side) / 2;
-      ctx.fillStyle = "#858585";
-      ctx.fillRect(left + 2, top + 3, side, side);
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(left, top, side, side);
-      ctx.fillStyle = "#c9c9c9";
-      ctx.fillRect(left + 4, top + 4, side - 8, side - 8);
-      ctx.fillStyle = "#a4a4a4";
-      ctx.fillRect(left + 4, top + 4, side - 8, 2);
-      ctx.fillRect(left + 4, top + 4, 2, side - 8);
-    }
+  ctx.fillStyle = "#808080"; ctx.fillRect(0, 0, 128, 128);
+  const rounded = (x, y, size, radius) => {
+    ctx.beginPath(); ctx.moveTo(x + radius, y); ctx.lineTo(x + size - radius, y);
+    ctx.quadraticCurveTo(x + size, y, x + size, y + radius); ctx.lineTo(x + size, y + size - radius);
+    ctx.quadraticCurveTo(x + size, y + size, x + size - radius, y + size); ctx.lineTo(x + radius, y + size);
+    ctx.quadraticCurveTo(x, y + size, x, y + size - radius); ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y); ctx.closePath(); ctx.fill();
+  };
+  for (const y of [16, 80]) for (const x of [16, 80]) {
+    ctx.fillStyle = "#3d3d3d"; rounded(x + 3, y + 3, 33, 5);
+    ctx.fillStyle = "#bcbcbc"; rounded(x, y, 33, 5);
+    ctx.fillStyle = "#888888"; rounded(x + 4, y + 4, 25, 3);
   }
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.needsUpdate = true;
-  studsPatternTexture = tex;
-  return studsPatternTexture;
+  return { width: 128, height: 128, pixels: ctx.getImageData(0, 0, 128, 128).data };
 }
 
-function makeStudsFaceMats(mesh, part, srcTex) {
-  if (!THREE || !mesh || !part || !srcTex) return null;
-  const sx = Math.max(0.2, toNum(part?.size?.x, 1));
-  const sy = Math.max(0.2, toNum(part?.size?.y, 1));
-  const sz = Math.max(0.2, toNum(part?.size?.z, 1));
-  const tileUnit = 4;
+function surfaceIconTexture(kind) {
+  const canvas = document.createElement("canvas"); canvas.width = canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  if (kind === 'glue' || kind === 'weld') {
+    ctx.strokeStyle = 'rgba(220,220,220,0.8)'; ctx.lineWidth = 9;
+    ctx.beginPath(); ctx.moveTo(8, 8); ctx.lineTo(120, 120); ctx.moveTo(120, 8); ctx.lineTo(8, 120); ctx.stroke();
+  } else {
+    const motor = kind === 'motor' || kind === 'steppingmotor';
+    ctx.fillStyle = '#7b6a1f'; ctx.fillRect(25, 54, 78, 23);
+    ctx.fillStyle = '#e2c84c'; ctx.fillRect(29, 48, 70, 23);
+    ctx.fillStyle = '#f5df6a'; ctx.fillRect(34, 49, 60, 5);
+    if (motor) { ctx.strokeStyle = '#7c7c7c'; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(64, 60, 28, 0, Math.PI * 2); ctx.stroke(); }
+  }
+  const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace; tex.needsUpdate = true; return tex;
+}
 
-  const faceFlags = [
-    isStudFace(part.rightSurface),
-    isStudFace(part.leftSurface),
-    isStudFace(part.topSurface),
-    isStudFace(part.bottomSurface),
-    isStudFace(part.frontSurface),
-    isStudFace(part.backSurface),
-  ];
-  const hasAnyStud = faceFlags.some(Boolean);
-  if (!hasAnyStud) return null;
-
-  const mk = (u, v, enabled) => {
-    if (!enabled) {
-      return new THREE.MeshStandardMaterial({
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-      });
+function getSurfacePatterns() {
+  if (surfacePatternsPromise) return surfacePatternsPromise;
+  surfacePatternsPromise = (async () => {
+    let image;
+    try {
+      const response = await fetch(textureProxy('rbxasset://textures/studs.dds'));
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      image = decodeDxt1DDS(await response.arrayBuffer());
+    } catch { image = fallbackStudPixels(); }
+    if (!image) return null;
+    const result = {};
+    for (const kind of ['studs', 'inlet', 'universal']) {
+      const tex = new THREE.DataTexture(surfacePixels(image, kind), image.width, image.height, THREE.RGBAFormat);
+      tex.colorSpace = THREE.SRGBColorSpace; tex.generateMipmaps = true; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.needsUpdate = true;
+      result[kind] = tex;
     }
-    const t = srcTex.clone();
-    t.wrapS = THREE.RepeatWrapping;
-    t.wrapT = THREE.RepeatWrapping;
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.repeat.set(Math.max(1, u / tileUnit), Math.max(1, v / tileUnit));
-    t.anisotropy = three.renderer.capabilities.getMaxAnisotropy();
-    t.needsUpdate = true;
-    return new THREE.MeshStandardMaterial({
-      transparent: true,
-      opacity: 0.65 * (1 - Math.max(0, Math.min(1, toNum(part.transparency, 0)))),
-      roughness: 0.72,
-      metalness: 0.02,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
-      color: hexColor(part.color3 || "#ffffff"),
-      map: t,
-      bumpMap: t,
-      bumpScale: 0.08,
-    });
-  };
+    for (const kind of ['glue', 'weld', 'hinge', 'motor', 'steppingmotor']) result[kind] = surfaceIconTexture(kind);
+    return result;
+  })();
+  return surfacePatternsPromise;
+}
 
-  return [
-    mk(sz, sy, faceFlags[0]),
-    mk(sz, sy, faceFlags[1]),
-    mk(sx, sz, faceFlags[2]),
-    mk(sx, sz, faceFlags[3]),
-    mk(sx, sy, faceFlags[4]),
-    mk(sx, sy, faceFlags[5]),
-  ];
+function makeSurfaceFaceMats(mesh, part, patterns) {
+  if (!THREE || !mesh || !part || !patterns) return null;
+  const sx = Math.max(0, toNum(part?.size?.x, 1));
+  const sy = Math.max(0, toNum(part?.size?.y, 1));
+  const sz = Math.max(0, toNum(part?.size?.z, 1));
+  const flags = [part.rightSurface, part.leftSurface, part.topSurface, part.bottomSurface, part.frontSurface, part.backSurface].map(surfaceKind);
+  if (!flags.some(Boolean)) return null;
+  const mk = (u, v, kind) => {
+    if (!kind || !patterns[kind] || (!isPlasticMat(part.material) && !['hinge', 'motor', 'steppingmotor'].includes(kind))) {
+      return new THREE.MeshStandardMaterial({ transparent: true, opacity: 0, depthWrite: false });
+    }
+    const texture = patterns[kind].clone();
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const [repeatX, repeatY] = surfaceRepeats(kind, u, v);
+    texture.repeat.set(repeatX, repeatY);
+    texture.anisotropy = three.renderer.capabilities.getMaxAnisotropy();
+    texture.needsUpdate = true;
+    const mechanical = ['hinge', 'motor', 'steppingmotor'].includes(kind);
+    const tiled = ['studs', 'inlet', 'universal'].includes(kind);
+    const material = new THREE.MeshStandardMaterial({ transparent: true, opacity: (mechanical ? 1 : 0.65) * (1 - Math.max(0, Math.min(1, toNum(part.transparency, 0)))), roughness: 0.72, metalness: 0.02, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, color: mechanical ? '#ffffff' : hexColor(part.color3 || '#ffffff'), map: texture, bumpMap: tiled ? texture : null, bumpScale: tiled ? 0.08 : 0 });
+    material.userData.surfaceOpacity = mechanical ? 1 : 0.65;
+    return material;
+  };
+  return [mk(sz, sy, flags[0]), mk(sz, sy, flags[1]), mk(sx, sz, flags[2]), mk(sx, sz, flags[3]), mk(sx, sy, flags[4]), mk(sx, sy, flags[5])];
 }
 
 function boxFaceRepeats(part, tileUnit = 4) {
@@ -1838,47 +1813,23 @@ function applyMatTex(mesh, part, version) {
     });
     return;
   }
-  if (hasStudsSurface(part) && isPlasticMat(part?.material)) {
-    Promise.resolve(getStudTex()).then((sourceTex) => {
-      if (!currentAppearance()) return;
-      // Some mobile WebGL implementations cannot decode the DDS even though
-      // the local client file exists. Keep the recorded Studs/Inlet surface
-      // visible with the procedural fallback rather than silently removing it.
-      if (!sourceTex) return;
-      const isBox = String(part?.shape || "").replace("Enum.PartType.", "").toLowerCase() === "block";
-      if (isBox) {
-        const mats = makeStudsFaceMats(mesh, part, sourceTex);
-        if (mats && mats.length === 6) {
-          clearStudOverlay(mesh);
-          const overlayGeo = mesh.geometry.clone();
-          const overlay = new THREE.Mesh(overlayGeo, mats);
-          overlay.position.copy(mesh.position);
-          overlay.rotation.copy(mesh.rotation);
-          overlay.quaternion.copy(mesh.quaternion);
-          overlay.scale.copy(mesh.scale).multiplyScalar(1.002);
-          overlay.renderOrder = (mesh.renderOrder || 0) + 1;
-          overlay.castShadow = false;
-          overlay.receiveShadow = true;
-          overlay.userData.isStudOverlay = true;
-          three.scene.add(overlay);
-          mesh.userData.studOverlay = overlay;
-          return;
-        }
-      }
-      const tex = sourceTex.clone();
-      tex.wrapS = THREE.RepeatWrapping;
-      tex.wrapT = THREE.RepeatWrapping;
-      tex.colorSpace = THREE.SRGBColorSpace;
-      const sx = Math.max(0.2, toNum(part?.size?.x, 1));
-      const sz = Math.max(0.2, toNum(part?.size?.z, 1));
-      const tileUnit = 4;
-      tex.repeat.set(Math.max(1, sx / tileUnit), Math.max(1, sz / tileUnit));
-      tex.anisotropy = three.renderer.capabilities.getMaxAnisotropy();
-      tex.needsUpdate = true;
-      if (!Array.isArray(mesh.material)) {
-        setMatMap(mesh.material, tex);
-      }
-      applyWireframeModeToMesh(mesh);
+  const isSurfaceBox = !part.meshId && String(part?.shape || 'Block').replace('Enum.PartType.', '').toLowerCase() === 'block' && mesh.geometry?.type === 'BoxGeometry';
+  if (isSurfaceBox && hasSurfacePattern(part)) {
+    getSurfacePatterns().then((patterns) => {
+      if (!currentAppearance() || !patterns) return;
+      const mats = makeSurfaceFaceMats(mesh, part, patterns);
+      if (!mats) return;
+      clearStudOverlay(mesh);
+      const overlay = new THREE.Mesh(mesh.geometry.clone(), mats);
+      overlay.position.copy(mesh.position);
+      overlay.quaternion.copy(mesh.quaternion);
+      overlay.scale.copy(mesh.scale).multiplyScalar(1.002);
+      overlay.renderOrder = (mesh.renderOrder || 0) + 1;
+      overlay.castShadow = false;
+      overlay.receiveShadow = true;
+      overlay.userData.isStudOverlay = true;
+      three.scene.add(overlay);
+      mesh.userData.studOverlay = overlay;
     });
     return;
   }
@@ -4499,7 +4450,7 @@ function repSet(mesh, p, alpha = 1, src = null) {
     studOverlay.quaternion.copy(mesh.quaternion);
     studOverlay.scale.copy(mesh.scale).multiplyScalar(1.002);
     for (const material of Array.isArray(studOverlay.material) ? studOverlay.material : [studOverlay.material]) {
-      if (material?.map) material.opacity = 0.65 * (1 - Math.max(0, Math.min(1, Number(tr || 0))));
+      if (material?.map) material.opacity = (material.userData.surfaceOpacity ?? 0.65) * (1 - Math.max(0, Math.min(1, Number(tr || 0))));
     }
   }
   if ((moved || rotated) && mesh.castShadow) shadowSceneDirty = true;

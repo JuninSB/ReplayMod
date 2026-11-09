@@ -75,17 +75,42 @@ test("MeshPart source dimensions preserve geometry origin when sizing", async ()
   assert.equal(geometry.boundingBox.max.x, 6);
 });
 
-test("stud surface tint follows recorded part color", () => {
+test("Roblox DXT1 stud tile decodes without a compressed texture extension", async () => {
+  const { decodeDxt1DDS, surfaceKind, surfacePixels, surfaceRepeats } = await import('../web/static/surface-patterns.mjs');
+  const bytes = readFileSync(path.join(__dirname, '../client-assets/textures/studs.dds'));
+  const tile = decodeDxt1DDS(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  assert.equal(tile.width, 128);
+  assert.equal(tile.height, 128);
+  assert.equal(tile.pixels.length, 128 * 128 * 4);
+  assert.deepEqual(surfaceRepeats('studs', 1, 4), [0.5, 2]);
+  assert.deepEqual(surfaceRepeats('studs', 1.5, 1), [0.75, 0.5]);
+  assert.deepEqual(surfaceRepeats('weld', 4, 1), [1, 1]);
+  assert.equal(surfaceKind('Enum.SurfaceType.Universal'), 'universal');
+  assert.equal(surfaceKind('Enum.SurfaceType.Smooth'), '');
+  assert.notDeepEqual(surfacePixels(tile, 'studs'), surfacePixels(tile, 'inlet'));
+  assert.notDeepEqual(surfacePixels(tile, 'universal'), surfacePixels(tile, 'studs'));
+  assert.throws(() => decodeDxt1DDS(new ArrayBuffer(16)), /Unsupported/);
+});
+
+test("surface tiles use part color and exact physical repeats on each face", async () => {
   const THREE = require('three');
+  const { surfaceKind, surfaceRepeats } = await import('../web/static/surface-patterns.mjs');
   const source = readFileSync(path.join(__dirname, '../web/static/app.js'), 'utf8');
-  const context = vm.createContext({ THREE, three: { renderer: { capabilities: { getMaxAnisotropy: () => 1 } } }, toNum: (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback, hexColor: value => value });
-  vm.runInContext(source.slice(source.indexOf('function isStudFace('), source.indexOf('function isPlasticMat(')) + source.slice(source.indexOf('function makeStudsFaceMats('), source.indexOf('function boxFaceRepeats(')), context);
-  context.part = { color3: '#e05030', transparency: 0, size: { x: 4, y: 1, z: 4 }, topSurface: 'Enum.SurfaceType.Studs' };
-  context.texture = new THREE.Texture();
-  const materials = vm.runInContext('makeStudsFaceMats({}, part, texture)', context);
+  const context = vm.createContext({ THREE, surfaceKind, surfaceRepeats, isPlasticMat: material => material === 'Plastic', three: { renderer: { capabilities: { getMaxAnisotropy: () => 1 } } }, toNum: (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback, hexColor: value => value });
+  vm.runInContext(source.slice(source.indexOf('function hasSurfacePattern('), source.indexOf('function isPlasticMat(')), context);
+  vm.runInContext(source.slice(source.indexOf('function makeSurfaceFaceMats('), source.indexOf('function boxFaceRepeats(')), context);
+  context.part = { color3: '#e05030', material: 'Plastic', transparency: 0, size: { x: 1, y: 1, z: 4 }, topSurface: 'Enum.SurfaceType.Studs', frontSurface: 'Enum.SurfaceType.Inlet' };
+  context.patterns = { studs: new THREE.Texture(), inlet: new THREE.Texture() };
+  const materials = vm.runInContext('makeSurfaceFaceMats({}, part, patterns)', context);
   assert.equal(materials[2].color.getHexString(), 'e05030');
+  assert.equal(materials[2].map.repeat.x, 0.5);
+  assert.equal(materials[2].map.repeat.y, 2);
+  assert.equal(materials[4].map.repeat.x, 0.5);
+  assert.equal(materials[4].map.repeat.y, 0.5);
   assert.ok(materials[2].opacity > 0);
   assert.equal(materials[0].opacity, 0);
+  assert.equal(context.hasSurfacePattern({ material: 'Wood', topSurface: 'Studs' }), false);
+  assert.equal(context.hasSurfacePattern({ material: 'Wood', topSurface: 'Hinge' }), true);
 });
 
 test("viewer edits keep invisible objects visible across playback updates without modifying recorded state", async () => {
