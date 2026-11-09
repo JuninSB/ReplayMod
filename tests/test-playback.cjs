@@ -2,6 +2,52 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { pathToFileURL } = require("node:url");
 const path = require("node:path");
+const { readFileSync } = require("node:fs");
+const { spawnSync } = require("node:child_process");
+const vm = require("node:vm");
+
+test("initial camera prefers a living visible player, then a loaded part", async () => {
+  const { chooseSpawnTarget } = await import("../web/static/camera-spawn.mjs");
+  const part = {position:{x:5000,y:0,z:0},userData:{part:{name:"Floor"}}};
+  const dead = {position:{x:0,y:0,z:0},userData:{part:{name:"Head",characterName:"Dead",characterHealth:0}}};
+  const player = {position:{x:3000,y:10,z:0},userData:{part:{name:"Head",characterName:"Player",characterHealth:100}}};
+  assert.equal(chooseSpawnTarget([part, dead, player]), player);
+  player.userData.part.transparency = 1;
+  assert.equal(chooseSpawnTarget([part, dead, player]), part);
+  assert.equal(chooseSpawnTarget([]), null);
+});
+
+test("offline export includes the complete viewer module graph and capture asset references", async () => {
+  const { collectModules, captureAssets } = await import("../web/static/offline-export.mjs");
+  const modules = await collectModules("/static/app.js", file => Promise.resolve(readFileSync(path.join(__dirname, "../web", file), "utf8")));
+  assert.ok(modules["/static/vendor/three/build/three.module.js"]);
+  assert.ok(modules["/static/vendor/three/examples/jsm/loaders/OBJLoader.js"]);
+  for (const source of Object.values(modules)) {
+    for (const match of source.matchAll(/["']offline:(\/static\/[^"']+)["']/g)) assert.ok(modules[match[1]], match[1]);
+  }
+  const { required } = captureAssets({base:{parts:[{meshId:"rbxassetid://123 ", textureId:"rbxassetid://456", clothing:{shirt:"rbxassetid://789"}}]},frames:[{u:[{textureId:"rbxassetid://999"}]}]});
+  assert.equal(required.size, 4);
+  assert.ok(required.has("/api/asset/mesh?src=rbxassetid%3A%2F%2F123"));
+});
+
+test("recorded YXZ orientation keeps the limb rotation axes correct", () => {
+  const THREE = require("three");
+  const source = readFileSync(path.join(__dirname, "../web/static/app.js"), "utf8");
+  const context = vm.createContext({ THREE });
+  vm.runInContext(source.slice(source.indexOf("function repLerp("), source.indexOf("function repNeedGeo(")), context);
+  context.mesh = new THREE.Mesh();
+  vm.runInContext('repSet(mesh, {position:{}, orientation:{x:90,y:90,z:0}})', context);
+  const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(context.mesh.quaternion);
+  assert.ok(direction.distanceTo(new THREE.Vector3(0, -1, 0)) < 1e-8);
+});
+
+test("viewer parses as the browser ES module", () => {
+  const checked = spawnSync(process.execPath, ["--input-type=module", "--check"], {
+    input: readFileSync(path.join(__dirname, "../web/static/app.js")),
+    encoding: "utf8",
+  });
+  assert.equal(checked.status, 0, checked.stderr);
+});
 
 const moduleUrl = pathToFileURL(
   path.join(__dirname, "../web/static/replay-timeline.mjs"),

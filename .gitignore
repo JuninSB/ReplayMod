@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 web/.env
 roblox_cookie.txt
+auth.lzk8
+auth.lzk8.invalid-*
 content/
 assetdelivery/**
 !assetdelivery/meshes/

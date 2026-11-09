@@ -7,7 +7,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { decodeLz4, meshToObj, meshToObjAsync } = require("../dist/codec.js");
 const { readLimitedAssetBody } = require("../dist/asset-body.js");
-const { readRobloxSecurity } = require("../dist/asset-auth.js");
+const { createVault, unlockVault, decryptVault } = require("../dist/asset-auth.js");
 const { expandCompactSnapshot } = require("../dist/compact.js");
 
 test("raw LZ4 and legacy text mesh", () => {
@@ -150,20 +150,17 @@ test("Asset Delivery stops reading after the size limit", async () => {
   assert.equal(canceled, true);
 });
 
-test("private cookie file reloads without exposing its value through the API", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "replay-cookie-"));
-  const file = path.join(dir, "cookie.txt");
-  try {
-    assert.equal(await readRobloxSecurity(file), null);
-    await fs.writeFile(file, ".ROBLOSECURITY=primeiro\n", { mode: 0o600 });
-    assert.equal(await readRobloxSecurity(file), "primeiro");
-    await fs.writeFile(file, "segundo\n");
-    assert.equal(await readRobloxSecurity(file), "segundo");
-    await fs.writeFile(file, "valor;outro=segredo\n");
-    assert.equal(await readRobloxSecurity(file), null);
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true });
-  }
+test("encrypted credential unlocks only with the correct password and rejects tampering", () => {
+  const credential = "secret-credential-test";
+  const { vault } = createVault(credential, "password123");
+  const encoded = JSON.stringify(vault);
+  assert.ok(!encoded.includes(credential));
+  assert.equal(decryptVault(unlockVault(encoded, "password123")), credential);
+  assert.throws(() => unlockVault(encoded, "incorrect"));
+  const tampered = { ...vault, tag: Buffer.alloc(16).toString("base64") };
+  assert.throws(() => unlockVault(JSON.stringify(tampered), "password123"));
+  assert.throws(() => createVault("invalid;cookie", "password123"));
+  assert.throws(() => createVault(credential, "123"));
 });
 
 test("legacy compact-v1 snapshot preserves parts and paths", () => {
@@ -219,6 +216,7 @@ test("Node server accepts chunked replays and enforces local authentication", as
     env: {
       ...process.env,
       SERVER_WEBVIEW_DATA_DIR: dataDir,
+      SERVER_WEBVIEW_LOG_PATH: path.join(dataDir, "server.log"),
       SERVER_WEBVIEW_CONTENT_DIR: contentDir,
       SERVER_WEBVIEW_CLIENT_ASSETS_DIR: clientAssetsDir,
       SERVER_WEBVIEW_ASSET_DELIVERY_DIR: assetDeliveryDir,
@@ -312,9 +310,19 @@ test("Node server accepts chunked replays and enforces local authentication", as
     });
     assert.equal(auth.status, 200);
     const { uploadToken } = await auth.json();
+    let diagnostics = "";
+    for (let i = 0; i < 30; i++) {
+      diagnostics = await fs.readFile(path.join(dataDir, "server.log"), "utf8").catch(() => "");
+      if (diagnostics.includes("/api/auth/local status=200")) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.match(diagnostics, /\/api\/auth\/local status=200/);
+    assert.ok(!diagnostics.includes(uploadToken));
     const replay = {
       serverId: "test-server",
       replayId: "test-replay",
+      captureFps: 60,
+      stepMs: 1000 / 60,
       base: { parts: [] },
       durationMs: 200,
       frames: [{ t: 200, a: [], u: [], d: [] }],
@@ -343,6 +351,8 @@ test("Node server accepts chunked replays and enforces local authentication", as
       await fetch(base + "/api/replay/latest?replayId=test-replay")
     ).json();
     assert.equal(loaded.frames.length, 1);
+    const library = await (await fetch(base + "/api/replays")).json();
+    assert.equal(library.replays.find((row) => row.replayId === "test-replay").captureFps, 60);
     const frameJson = JSON.stringify([{ t: 100, a: [], u: [], d: [], da: [
       { id: "decal_1", partPath: "part_1" },
     ], du: [], dd: [] }]);

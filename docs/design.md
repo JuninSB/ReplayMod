@@ -26,3 +26,7 @@ The executor panel is compact, ignores Roblox's top inset, and can be dragged by
 ## Visual verification
 
 Check the viewer at desktop and mobile widths, portrait and landscape, touch controls, playback states, and empty/error states. Browser screenshots do not replace tests with a Roblox executor or on a physical mobile device.
+
+## Sharing and initial view
+
+Share opens a dialog with Copy link and Download offline HTML. Export progress and missing assets stay inside the dialog; users may explicitly export with missing assets or close to cancel. TPS badges use red at 5, green at 30, and blue at 60, with intermediate hues. Short landscape screens use a compact transport bar and movement controls. Initial camera placement prioritizes visible player heads with positive recorded health; captures without health use visible player heads, then a visible scene part. Browser/device verification remains required for the final scale and file-opening behavior.

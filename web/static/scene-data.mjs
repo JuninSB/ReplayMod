@@ -36,6 +36,7 @@ export function normalizePart(raw) {
     path: String(readAny(raw, ["path", "Path"]) || ""),
     name: String(readAny(raw, ["name", "Name"]) || ""),
     characterName: String(readAny(raw, ["characterName", "CharacterName"]) || ""),
+    characterHealth: raw.characterHealth == null ? null : toNum(raw.characterHealth, 0),
     className,
     shape: String(readAny(raw, ["shape", "Shape"]) || "Block"),
     size,
@@ -85,17 +86,20 @@ export function isCharHead(part) {
 }
 
 export function textureProxy(src) {
-  return `/api/asset/texture?src=${encodeURIComponent(src || "")}`;
+  const url = `/api/asset/texture?src=${encodeURIComponent(String(src || "").trim())}`;
+  return globalThis.__REPLAY_OFFLINE__ ? globalThis.__REPLAY_OFFLINE__.assets[url] || 'data:application/octet-stream;base64,' : url;
 }
 
 export function textureFetchUrl(src) {
   const raw = String(src || "").trim();
-  if (raw.startsWith("/api/") || raw.startsWith("data:")) return raw;
+  if (raw.startsWith("/api/")) return globalThis.__REPLAY_OFFLINE__ ? globalThis.__REPLAY_OFFLINE__.assets[raw] || 'data:application/octet-stream;base64,' : raw;
+  if (raw.startsWith("data:")) return raw;
   return textureProxy(raw);
 }
 
 export function meshProxy(src) {
-  return `/api/asset/mesh?src=${encodeURIComponent(src || "")}`;
+  const url = `/api/asset/mesh?src=${encodeURIComponent(String(src || "").trim())}`;
+  return globalThis.__REPLAY_OFFLINE__ ? globalThis.__REPLAY_OFFLINE__.assets[url] || 'data:text/plain,' : url;
 }
 
 export function usesBoxFaceMaterials(part, geometryType) {

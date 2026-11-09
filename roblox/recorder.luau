@@ -200,14 +200,32 @@ local dirtyHead = 1
 local removedHead = 1
 local movingCursor = 1
 local statsAt, statsSamples = 0, 0
+local logPath = "replaymod-client.log"
+local logAvailable = type(writefile) == "function" and type(appendfile) == "function"
+if logAvailable then
+    logAvailable = pcall(writefile, logPath, "Replay Mod client diagnostics\n")
+end
+if not logAvailable then warn("[Replay Mod] Client log unavailable: executor file functions failed or are missing.") end
+local function diagnostic(message)
+    if not logAvailable then return end
+    local ok = pcall(appendfile, logPath, string.format("%.3f %s\n", os.clock(), message))
+    if not ok then
+        logAvailable = false
+        warn("[Replay Mod] Could not write client diagnostics.")
+    end
+end
+diagnostic("recorder started")
 local function api(path, payload, token)
+    diagnostic("POST " .. path .. " started")
     local url = REPLAY_BASE_URL .. path
     local body = hs:JSONEncode(payload)
     local headers = { ["Content-Type"] = "application/json", ["X-Upload-Token"] = token or "" }
     local ok, response = pcall(transport, {Url = url, Method = "POST", Headers = headers, Body = body})
+    diagnostic("POST transport returned " .. (ok and "success" or "failure"))
     if not ok then response = tostring(response) end
     if type(response) == "table" then
         local sc = tonumber(response.StatusCode or response.Status) or 0
+        diagnostic("POST " .. path .. " status=" .. tostring(sc))
         if sc < 200 or sc >= 300 then error("HTTP " .. tostring(sc) .. ": " .. tostring(response.Body):sub(1, 180)) end
         local data = hs:JSONDecode(response.Body)
         if type(data) == "table" and data.error then error(tostring(data.error)) end
@@ -217,6 +235,7 @@ local function api(path, payload, token)
     local fallbackOk, fallbackBody = pcall(function()
         return game:HttpPost(url, body, "application/json", headers)
     end)
+    diagnostic("HttpPost fallback " .. (fallbackOk and "returned" or "failed"))
     if not fallbackOk or type(fallbackBody) ~= "string" then
         error("POST local falhou: " .. tostring(response) .. " / " .. tostring(fallbackBody))
     end
@@ -224,6 +243,18 @@ local function api(path, payload, token)
     if not decodedOk or type(data) ~= "table" then error("HttpPost: " .. fallbackBody:sub(1, 180)) end
     if data.error then error(tostring(data.error)) end
     return data
+end
+local function authenticate(path, payload)
+    local done, succeeded, result = false, false, nil
+    task.spawn(function()
+        succeeded, result = pcall(api, path, payload)
+        done = true
+    end)
+    local deadline = os.clock() + 20
+    repeat task.wait(0.1) until done or os.clock() >= deadline
+    if not done then diagnostic("authentication timed out " .. path); error("Authentication timed out. Check the server and connection, then try again.") end
+    if not succeeded then error(result) end
+    return result
 end
 local function idOf(inst)
     if not ids[inst] then nextId += 1; ids[inst] = "part_" .. tostring(nextId) end
@@ -515,6 +546,10 @@ local function partPatch(inst, id, props)
     if props.full or props.CFrame or props.Position or props.Orientation then
         patch.position = v3(inst.Position)
         patch.orientation = v3(inst.Orientation)
+        if inst.Name == "Head" and inst.Parent then
+            local humanoid = inst.Parent:FindFirstChildOfClass("Humanoid")
+            if humanoid then patch.characterHealth = humanoid.Health end
+        end
     end
     if props.Size then patch.size = v3(inst.Size) end
     if props.Color then patch.color3 = hex(inst.Color) end
@@ -556,6 +591,22 @@ local function sample()
         lastCamera = camera
     end
     local checked = 0
+    -- Capture each humanoid pose in this tick instead of splitting its limbs
+    -- across the generic moving-part budget. Includes accessory handles.
+    for _, player in ipairs(ps:GetPlayers()) do
+        local character = player.Character
+        if character then
+            for _, inst in ipairs(character:GetDescendants()) do
+                if inst:IsA("BasePart") and tracked[inst] then
+                    local id = idOf(inst)
+                    if previous[id] then
+                        local ok, patch = pcall(partPatch, inst, id, {CFrame = true})
+                        if ok and patch then table.insert(frame.u, patch) end
+                    end
+                end
+            end
+        end
+    end
     while checked < 100 and #moving > 0 do
         if movingCursor > #moving then movingCursor = 1 end
         local inst = moving[movingCursor]
@@ -821,6 +872,7 @@ local function chunksForCapture()
     if encodedChunks then return encodedChunks end
     flushFrameBuffer()
     status.Text = "Preparing upload chunks…"
+    diagnostic("preparing upload chunks")
     local chunks, current = {}, ""
     local function append(text)
         local at = 1
@@ -874,9 +926,11 @@ local function chunksForCapture()
     end
     if #current > 0 then table.insert(chunks, current) end
     encodedChunks = chunks
+    diagnostic("prepared chunks=" .. tostring(#chunks))
     return chunks
 end
 local function uploadByHttpGet(chunks, sid, kind)
+    diagnostic("local GET fallback started")
     if not isLoopbackBase(REPLAY_BASE_URL) then error("HTTP GET fallback is only available on localhost.") end
     local function pieceEnd(chunk, at)
         local last = math.min(#chunk, at + 3500 - 1)
@@ -894,6 +948,7 @@ local function uploadByHttpGet(chunks, sid, kind)
         end
     end
     local uploadId = hs:GenerateGUID(false)
+    diagnostic("local GET pieces=" .. tostring(total))
     local result
     local index = 0
     for _, chunk in ipairs(chunks) do
@@ -914,6 +969,7 @@ local function uploadByHttpGet(chunks, sid, kind)
             index += 1
             at = last + 1
             if index % 25 == 0 or index == total then
+                diagnostic("local GET sent=" .. tostring(index) .. "/" .. tostring(total))
                 status.Text = string.format("Sending locally %d/%d (%.0f%%)", index, total, index / total * 100)
                 task.wait()
             end
@@ -924,13 +980,15 @@ end
 local function upload()
     local sid = captured.serverId
     local kind = captured.kind or "replay"
+    diagnostic("upload started kind=" .. kind .. " fps=" .. tostring(captured.captureFps or 0))
     local endpoint = kind == "snapshot" and "/api/snapshot/chunk" or "/api/replay/chunk"
     local expectedId = kind == "snapshot" and "serverId" or "replayId"
     local expectedName = kind == "snapshot" and "snapshotName" or "replayName"
     status.Text = "Authenticating…"
+    task.wait()
     local token, useLocalGet = nil, false
     if isLoopbackBase(REPLAY_BASE_URL) then
-        local authenticated, reply = pcall(api, "/api/auth/local", {serverId = sid})
+        local authenticated, reply = pcall(authenticate, "/api/auth/local", {serverId = sid})
         if authenticated then token = reply.uploadToken
         else useLocalGet = true; status.Text = "POST unavailable; preparing local transfer…" end
     else
@@ -938,7 +996,7 @@ local function upload()
         if #accessCode ~= 20 then
             error("Enter the 20-digit login code printed in the server terminal. It expires after 30 minutes.")
         end
-        local redeemed, ticket = pcall(api, "/api/auth/redeem", {code = accessCode, serverId = sid})
+        local redeemed, ticket = pcall(authenticate, "/api/auth/redeem", {code = accessCode, serverId = sid})
         if not redeemed then
             local message = tostring(ticket)
             if message:find("code not found", 1, true) then
@@ -948,13 +1006,15 @@ local function upload()
             end
             error(message)
         end
-        token = api("/api/auth/exchange", {ticket = ticket.ticket, serverId = sid}).uploadToken
+        token = authenticate("/api/auth/exchange", {ticket = ticket.ticket, serverId = sid}).uploadToken
     end
     local chunks = chunksForCapture()
     local uploadId = hs:GenerateGUID(false)
     local result
     if useLocalGet then result = uploadByHttpGet(chunks, sid, kind) else
     for i, chunk in ipairs(chunks) do
+        status.Text = string.format("Sending chunk %d/%d…", i, #chunks)
+        task.wait()
         local sent, reply = pcall(api, endpoint, {uploadId = uploadId, serverId = sid,
             chunkIndex = i - 1, totalChunks = #chunks, chunkData = chunk}, token)
         if not sent then
@@ -970,6 +1030,7 @@ local function upload()
     end
     end
     if not result or not result.ok or not result[expectedId] then error("The server did not confirm the upload.") end
+    diagnostic("upload completed")
     status.Text = "Saved: " .. tostring(result[expectedName] or (kind == "snapshot" and "Snapshot" or "Replay"))
     captured, encodedChunks = nil, nil
     send.Visible = false
@@ -1037,6 +1098,7 @@ connections[#connections + 1] = send.Activated:Connect(function()
         busy = false
         send.Text = captureMode == "snapshot" and "Send snapshot" or "Send replay"
         if not ok then
+            diagnostic("upload failed; see recorder status")
             status.Text = tostring(err)
             send.Visible = not minimized
         end

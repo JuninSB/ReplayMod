@@ -7,7 +7,11 @@ import { decodeLz4, meshToObjAsync } from "./codec";
 import { materialAliases } from "./materials";
 import { expandCompactSnapshot } from "./compact";
 import { readLimitedAssetBody } from "./asset-body";
-import { readRobloxSecurity } from "./asset-auth";
+import {
+  decryptVault,
+  initializeCredential,
+  UnlockedVault,
+} from "./asset-auth";
 import {
   Json,
   loadData,
@@ -19,6 +23,15 @@ import {
 } from "./store";
 
 const root = path.resolve(__dirname, "..");
+const diagnosticLog =
+  process.env.SERVER_WEBVIEW_LOG_PATH ||
+  path.join(root, "replaymod-server.log");
+function diagnostic(message: string): void {
+  const line = `${new Date().toISOString()} ${message}\n`;
+  void fs.appendFile(diagnosticLog, line).catch(() => {
+    console.error("[Replay Mod] Could not write diagnostic log.");
+  });
+}
 try {
   for (const line of readFileSync(path.join(root, "web/.env"), "utf8").split(
     /\r?\n/,
@@ -116,9 +129,7 @@ function assetCacheDirs(kind: "mesh" | "texture"): string[] {
     ...legacyContentDirs.map((dir) => path.join(dir, "cache", "node")),
   ];
 }
-const robloxCookieFile =
-  process.env.SERVER_WEBVIEW_ROBLOX_SECURITY_FILE ||
-  path.join(root, "roblox_cookie.txt");
+let credential: UnlockedVault | null = null;
 function str(v: unknown): string {
   return typeof v === "string" ? v.trim() : String(v ?? "").trim();
 }
@@ -430,10 +441,7 @@ async function fetchAsset(
     if (!parsed) return null;
     const headers: Record<string, string> = { "User-Agent": "ReplayMod/2.0" };
     if (parsed.hostname === "assetdelivery.roblox.com") {
-      const cookie = await readRobloxSecurity(
-        robloxCookieFile,
-        process.env.SERVER_WEBVIEW_ROBLOX_SECURITY,
-      );
+      const cookie = credential ? decryptVault(credential) : null;
       if (cookie) headers.Cookie = `.ROBLOSECURITY=${cookie}`;
     }
     if (
@@ -811,6 +819,9 @@ async function handle(
           replayName: r.replayName,
           timestamp: r.timestamp,
           durationMs: r.durationMs,
+          captureFps: r.captureFps,
+          stepMs: r.stepMs,
+          tickChanges: r.tickChanges,
           chatCount: Array.isArray(r.chatEvents) ? r.chatEvents.length : 0,
           thumbnailUrl: (await thumbnailPath(str(r.replayId), "rep"))
             ? `/api/server/thumbnail?replayId=${encodeURIComponent(str(r.replayId))}`
@@ -929,9 +940,31 @@ async function handle(
   return fail(res, "not found", 404);
 }
 export async function start(): Promise<http.Server> {
+  credential = await initializeCredential(path.join(root, "auth.lzk8"));
   await loadData();
   const server = http.createServer((req, res) => {
+    const route = (req.url || "").split("?", 1)[0];
+    if (
+      /^\/api\/(auth\/(local|redeem|exchange)|(replay|snapshot)\/(chunk|local-chunk))$/.test(
+        route,
+      )
+    ) {
+      const started = Date.now();
+      diagnostic(`request ${req.method} ${route} started`);
+      res.once("finish", () =>
+        diagnostic(
+          `request ${req.method} ${route} status=${res.statusCode} duration_ms=${Date.now() - started}`,
+        ),
+      );
+      res.once("close", () => {
+        if (!res.writableFinished)
+          diagnostic(
+            `request ${req.method} ${route} disconnected duration_ms=${Date.now() - started}`,
+          );
+      });
+    }
     handle(req, res).catch((error) => {
+      diagnostic("request failed");
       console.error("[Replay Mod]", error);
       if (!res.headersSent)
         fail(
@@ -950,6 +983,10 @@ export async function start(): Promise<http.Server> {
       else res.end();
     });
   });
+  server.once("close", () => {
+    credential?.key.fill(0);
+    credential = null;
+  });
   await new Promise<void>((resolve, reject) => {
     const onError = (error: Error) => reject(error);
     server.once("error", onError);
@@ -959,6 +996,7 @@ export async function start(): Promise<http.Server> {
     });
   });
   console.log(`[Replay Mod] http://${host}:${port}`);
+  diagnostic("server started");
   console.log(
     `[Replay Mod] Loadstring: loadstring(game:HttpGet("${publicBase}/recorder.lua"))()`,
   );

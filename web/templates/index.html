@@ -166,6 +166,18 @@
       </div>
     </header>
 
+    <dialog id="shareDialog" class="share-dialog">
+      <h2>Share capture</h2>
+      <p>Copy a server link or download a self-contained offline viewer.</p>
+      <div class="share-actions">
+        <button id="shareLinkBtn" type="button">Copy link</button>
+        <button id="shareOfflineBtn" type="button">Download offline HTML</button>
+        <button id="shareCloseBtn" type="button">Close</button>
+      </div>
+      <p id="shareStatus" role="status"></p>
+      <ul id="shareMissing" class="share-missing"></ul>
+      <button id="continueOfflineBtn" type="button" hidden>Export anyway</button>
+    </dialog>
     <div id="appStatus" role="status" class="app-status"></div>
     <section id="landingView" class="landing-view">
       <div class="landing-head">

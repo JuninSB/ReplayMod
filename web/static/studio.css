@@ -59,6 +59,10 @@ button:disabled {
   backdrop-filter: none;
   border-bottom: 1px solid #35404d;
 }
+/* Keep viewer controls out of the library, including before scripts load. */
+body:not(.is-viewer) .topbar > :not(.brand):not(#refreshBtn) {
+  display: none !important;
+}
 .brand {
   letter-spacing: 1px;
   text-shadow: none;
@@ -114,12 +118,27 @@ button:disabled {
   gap: 20px;
 }
 .server-card {
+  position: relative;
   min-height: 210px;
   border-radius: 10px;
   background: #202731;
   transition:
     border-color 0.15s,
     transform 0.15s;
+}
+.server-card-tps {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--tps-color, var(--muted));
+  border-radius: 6px;
+  background: var(--tps-bg, #202731);
+  color: var(--tps-color, var(--muted));
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.2;
 }
 .server-card:hover {
   border-color: #7ce6bd;
@@ -940,3 +959,52 @@ body.sidebar-open .replay-bar {
     transition: none;
   }
 }
+
+/* Short landscape windows need the scene to retain most of the height. */
+@media (max-height: 540px) and (orientation: landscape) {
+  body.is-viewer .replay-bar {
+    grid-template-columns: auto auto auto auto minmax(80px, 1fr) auto auto;
+    grid-template-areas: "play camera back forward seek speed time";
+    gap: 5px;
+    padding: 6px;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+  }
+  body.is-viewer .replay-bar button,
+  body.is-viewer .replay-bar select {
+    min-height: 34px;
+    padding: 5px 7px;
+    font-size: 11px;
+  }
+  body.is-viewer .speed-label { font-size: 0; }
+  body.is-viewer .replay-time { font-size: 10px; min-width: 80px; }
+  body.is-viewer .touch-controls {
+    grid-template-columns: repeat(3, 38px);
+    grid-template-rows: repeat(3, 38px);
+    gap: 4px;
+    bottom: 65px;
+  }
+  body.is-viewer .touch-controls button { min-width: 38px; min-height: 38px; padding: 0; font-size: 20px; }
+  body.is-viewer .camera-help { display: none; }
+  body.is-viewer .toolbar-extras.is-open { left: auto; width: min(300px, calc(100vw - 20px)); }
+  body.is-viewer .debug-menu { width: min(280px, calc(100vw - 24px)); font-size: 11px; }
+  body.is-viewer .debug-item { padding: 7px; gap: 7px; }
+}
+
+.share-dialog {
+  width: min(560px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 20px;
+}
+.share-dialog::backdrop { background: #000a; }
+.share-dialog h2 { margin: 0 0 10px; font-size: 20px; }
+.share-dialog p { color: var(--muted); line-height: 1.5; }
+.share-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.share-missing { max-height: 180px; overflow: auto; overflow-wrap: anywhere; font-size: 12px; }
+#continueOfflineBtn[hidden] { display: none; }

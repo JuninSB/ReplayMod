@@ -32,14 +32,22 @@ The server binds to `127.0.0.1` by default. That keeps it local to the device. F
 
 Same-device uploads authenticate automatically; no token setup is needed. For a phone executor connecting to a computer over Wi-Fi, the server prints a temporary login code; see [setup and configuration](docs/setup.md#capture-login-and-upload-token).
 
-Replays and snapshots are created under `web/data/`. Locally supplied Roblox client files go in `client-assets/`; Asset Delivery fetches supported `rbxassetid://` references and caches them under `assetdelivery/meshes/` and `assetdelivery/textures/`. Configure your `.ROBLOSECURITY` cookie in a private server-side file to request supported public assets with your Roblox session. The cookie cannot restore deleted assets or access private assets the account is not permitted to use. Built-in `rbxasset://` files need optional client content under `client-assets/`. These asset folders are ignored except for empty placeholders, so Roblox files and downloads are not shipped in the repository. These files are important for built-in textures; follow the [client assets tutorial](docs/setup.md#add-local-roblox-content-files) to provide them.
+Replays and snapshots are created under `web/data/`. The repository includes `client-assets/` for built-in `rbxasset://` resources and material textures. Asset Delivery fetches supported `rbxassetid://` references and caches them under `assetdelivery/meshes/` and `assetdelivery/textures/`. You can create an encrypted `auth.lzk8` file for a server-side `.ROBLOSECURITY` session for supported requests; it cannot restore deleted assets or grant access to private assets your account cannot use.
+
+## Share and explore
+
+Open a capture and choose **Share** to copy a server link or download a single offline HTML file with the viewer, capture, meshes, and textures. If assets cannot be included, review the list and choose **Export anyway** or close to cancel. The missing-asset list stays in the exported file. Open the HTML in a browser with WebGL and import-map support; no Replay Mod server is required for playback.
+
+Replay cards show the configured TPS in a colored corner badge. The initial camera appears near a visible player, falling back to a scene part. New captures include player health for this choice; older captures use visible loaded players. The recorder samples players' limbs together each tick, and playback uses Roblox's YXZ rotation order with quaternion interpolation. This is not yet a full Motor6D rig reconstruction.
+
+The terminal offers to create and unlock the encrypted `auth.lzk8` file for Roblox session access. See [setup](docs/setup.md#roblox-session-credential) and [operations](docs/operacao.md) for credentials, diagnostic logs, and offline export limitations.
 
 ## Develop and verify
 
 ```sh
 npm run build
 npm test
-node --check web/static/app.js
+node --input-type=module --check < web/static/app.js
 npm run format:check
 ```
 
@@ -51,4 +59,4 @@ If you use an AI coding agent, this repository includes project instructions in 
 
 ## License
 
-This project is distributed under GNU GPL version 3 only; see [LICENSE](LICENSE). Notices for the original MIT-licensed Webview source and bundled dependencies are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Roblox assets are not included and remain subject to their own terms.
+This project is distributed under GNU GPL version 3 only; see [LICENSE](LICENSE). Notices for the original MIT-licensed Webview source and bundled dependencies are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Roblox assets remain subject to their own terms.

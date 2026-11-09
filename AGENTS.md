@@ -2,7 +2,7 @@
 
 ## Project Structure
 
-`roblox/` contains the Luau recorder; `server/` contains the TypeScript API, storage, asset delivery and codecs; `web/static/` and `web/templates/` contain the responsive Three.js viewer. `tests/` contains playback checks, and `server/server.test.cjs` covers server behavior. `docs/` explains operation, API contracts, product behavior and visual conventions. `dist/`, `node_modules/`, and `web/static/vendor/three/` are generated. `web/data/`, `client-assets/`, and `assetdelivery/` hold local runtime data; commit only the empty placeholders, never captures, Roblox client files, or downloads.
+`roblox/` contains the Luau recorder; `server/` contains the TypeScript API, storage, asset delivery and codecs; `web/static/` and `web/templates/` contain the responsive Three.js viewer. `tests/` contains playback checks, and `server/server.test.cjs` covers server behavior. `docs/` explains operation, API contracts, product behavior and visual conventions. `dist/`, `node_modules/`, and `web/static/vendor/three/` are generated. `client-assets/` contains bundled client assets. `web/data/` and `assetdelivery/` hold local runtime data; never commit captures or cached downloads.
 
 ## Install, Build and Verify
 
@@ -22,4 +22,4 @@ Name server checks `*.test.cjs`; put viewer behavior checks in `tests/`. Add reg
 
 ## Security and Licensing
 
-Never commit `.env`, Roblox cookies, API keys, access codes, captures, or downloaded Roblox assets. Keep the server bound to loopback by default. This project is GPL-3.0-only; preserve notices in `THIRD-PARTY-NOTICES.md` and check dependency licenses before adding packages.
+Never commit `.env`, `auth.lzk8`, credential backups, Roblox cookies, API keys, access codes, captures, or cached downloads. Keep the server bound to loopback by default. This project is GPL-3.0-only; preserve notices in `THIRD-PARTY-NOTICES.md` and check dependency licenses before adding packages.

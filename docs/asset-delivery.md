@@ -20,7 +20,7 @@ Asset privacy controls who may use an asset. Imported assets are private by defa
 
 The **Asset Delivery API** delivers content; **Open Cloud Assets APIs** manage supported asset uploads, updates, and metadata. An Open Cloud API key is not a universal download credential and does not grant access to someone else's private assets. Use keys scoped to the operation and resources you own or administer. Never put an API key or Roblox session cookie in browser JavaScript, a replay, a Git repository, a screenshot, or a client-side executor script, if you do you might get your information stolen.
 
-Replay Mod can read a server-side `.ROBLOSECURITY` session file to request supported public assets through that Roblox session. This does not restore deleted assets or grant access to private assets the account is not permitted to use. The cookie is a highly sensitive account credential: store it in a private file outside the repository and shared storage, limit file permissions, use a least-privileged secondary account when possible, and revoke the session when finished. See [configuration and security](operacao.md). Do not use cookie-based access to evade asset privacy, moderation, or licensing.
+Replay Mod can use an encrypted `auth.lzk8` credential file to request supported assets through a Roblox session. See [setup](setup.md#roblox-session-credential) for creation and its security limits. Do not use cookie-based access to evade asset privacy, moderation, or licensing.
 
 ## A practical resolution pipeline
 
@@ -47,15 +47,7 @@ Replay Mod's mesh proxy currently converts a set of Roblox FileMesh versions to 
 
 ## What Replay Mod currently includes and resolves
 
-# legal part, ignore
-The source repository includes only empty `client-assets/` and `assetdelivery/` directory markers. It does **not** include Roblox client files, base textures, or downloaded assets. The viewer reads `rbxasset://` files from `client-assets/` (or a configured accessible client content folder); material maps are local-only files under `client-assets/material_textures/`. The server no longer fetches default material maps by ID. Separately referenced `rbxassetid://` assets use Asset Delivery and are cached under `assetdelivery/meshes/` or `assetdelivery/textures/`.
-
-`rbxassetid://...` references can go through Roblox Asset Delivery, subject to access and supported response formats. `rbxasset://` references point to files in a Roblox client content folder, such as `textures/face.png`. By default, Replay Mod looks for those paths under `client-assets/`; the old `content/` path remains a temporary compatibility fallback. Set `SERVER_WEBVIEW_CLIENT_ASSETS_DIR` to keep that local folder elsewhere, or set `SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR` to read another accessible client `content/` directory in place. On Windows, the Creator Hub documents a per-version path under `%LOCALAPPDATA%/Roblox/Versions/<version>/content`; choose the active version's `content` directory.
-
-# Android/Mobile
-The Roblox Android app's private files are normally sandboxed from Termux, so a Termux server cannot assume it can read them. you will need to get the folder from somewhere else or follow the client assets tutorial in README.md
-
-The generic face fallback in the viewer references `rbxasset://textures/face.png`; it therefore needs that file to be available in one of the configured client-asset directories. A captured custom face decal or a custom head's UV texture is handled separately through recorded references. Roblox built-in base content is not automatically downloadable through the documented Asset Delivery API: use only officially documented asset delivery for `rbxassetid` references, or a client content directory you are authorized to access.
+The repository includes `client-assets/` for built-in `rbxasset://` resources. Material maps are read from `client-assets/material_textures/`. Separately, supported `rbxassetid://` assets use Asset Delivery and are cached under `assetdelivery/meshes/` or `assetdelivery/textures/`.
 
 ### Which local client files Replay Mod needs
 
@@ -72,37 +64,6 @@ For the viewer's current built-in `rbxasset://` references, the only relevant cl
 For the viewer, do not copy Roblox's `Shaders.zip`: Replay Mod uses Three.js, so equivalent lighting/material effects must be rewritten for its renderer. The launcher/player executables, CoreScripts/Lua packages, translations, sounds, fonts, API dictionaries, and built-in models are not needed to resolve these current texture paths. Local material PBR maps, when supplied, belong under `client-assets/material_textures/`; maps are not silently substituted with Asset Delivery downloads.
 
 Terrain is also technically implementable without `content-terrain.zip`: Roblox exposes `Terrain:ReadVoxelChannels()` for `SolidMaterial`, `SolidOccupancy`, and `LiquidOccupancy`, at resolution 4. A browser renderer can turn captured voxel values into surface geometry and apply Three.js materials. Roblox requires a grid-aligned read region and limits a single read to 4,194,304 voxels, so the recorder needs a bounded region/chunk strategy. For performance, an initial region snapshot plus changed voxel chunks is more practical than rescanning a large terrain area at every replay tick; this is an engineering inference from the API's region limit and the capture rate. See the [Terrain API](https://create.roblox.com/docs/reference/engine/classes/Terrain) and [terrain guide](https://create.roblox.com/docs/building-and-visuals/studio-modeling/terrain). The current recorder does not yet implement terrain capture or rendering.
-
-If you have an authorized local Roblox client `content/` folder, configure the server to read it directly.
-
-# More legal stuff
- If you keep a separate local copy, place the content folder's files directly in `ReplayMod/client-assets/` so `textures/`, `sky/`, and `material_textures/` retain their paths; do not copy the Player executable. Do not fetch package ZIPs through third-party tools or undocumented CDN URLs. Roblox's documented Asset Delivery API serves documented asset-ID routes, not these client packages.
-
-## Fresh setup tutorial: use a Windows Player content folder
-
-This starts with a fresh official Roblox Player installation on the same Windows PC as the Replay Mod server. Roblox's installer places the client content files on that PC; Replay Mod reads them in place. The steps do not download an extra Player package or unpack/copy the client.
-
-1. Install Roblox Player from the official Roblox website and launch a game once. This lets the official installer finish and creates the versioned client directory.
-2. Press **Win+R**, enter `%LOCALAPPDATA%/Roblox/Versions`, and open the newest version folder containing `RobloxPlayerBeta.exe`.
-3. Open that folder's `content` subfolder. The Creator Hub documents this Windows path under `%LOCALAPPDATA%/Roblox/Versions/<version>/content` (some older installs may use `C:/Program Files (x86)/Roblox/Versions/<version>/content`).
-4. Check the expected files inside it. For example, `rbxasset://textures/face.png` maps to `content/textures/face.png`; `rbxasset://textures/studs.dds` maps to `content/textures/studs.dds`; `rbxasset://sky/sun.jpg` maps to `content/sky/sun.jpg`; and `rbxasset://textures/particles/fire_main.dds` maps to `content/textures/particles/fire_main.dds`. Exact files can vary by client version.
-5. In `web/.env`, set `SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR` to the full path of the `content` folder itself. Replace the example username and version with the ones on your PC:
-
-   ```dotenv
-   SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR=C:/Users/YourName/AppData/Local/Roblox/Versions/version-1234567890abcdef/content
-   ```
-
-6. Restart Replay Mod and request a known image through the local proxy. In PowerShell:
-
-   ```powershell
-   Invoke-WebRequest 'http://127.0.0.1:8000/api/asset/texture?src=rbxasset%3A%2F%2Ftextures%2Fface.png' -OutFile "$env:TEMP/replaymod-face.png"
-   ```
-
-   A successful response writes the file to your temporary directory. If it returns 404, confirm that the configured path ends in `content` and that the selected Player version contains `textures/face.png`.
-
-After a Roblox Player update, the active version directory can change. Repeat steps 2–5 and update the private `.env` path if necessary.
-
-Keep the path in your local, ignored `.env`; do not commit or copy Roblox client files into the repository. A phone can run the executor while the server runs on this Windows PC over a trusted home Wi-Fi network; configure the server's LAN URL and use the current terminal login code as described in [setup](setup.md). If both Roblox and Replay Mod run only on Android/Termux, this tutorial does not apply: Android app-private storage is sandboxed and normally inaccessible to Termux. The supported alternative is Asset Delivery for permitted `rbxassetid://` references, not downloading the Roblox Player package or extracting its built-in files.
 
 ### Audio
 

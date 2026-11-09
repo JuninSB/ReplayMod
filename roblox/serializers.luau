@@ -104,7 +104,10 @@ local function partData(p, stablePath)
         castShadow = p.CastShadow,
     }
     local characterName = characterNameOf(p)
-    if characterName then data.characterName = characterName end
+    if characterName then
+        data.characterName = characterName
+        data.characterHealth = p.Parent:FindFirstChildOfClass("Humanoid").Health
+    end
     if p:IsA("Part") then
         data.shape = tostring(p.Shape)
         data.topSurface = tostring(p.TopSurface)

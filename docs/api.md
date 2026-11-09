@@ -12,7 +12,7 @@ Default base URL: `http://127.0.0.1:8000`. Error responses use `{ "error": "mess
 | `POST /api/replay/chunk` | Authenticated replay chunk | `X-Upload-Token`, `uploadId`, `serverId`, `chunkIndex`, `totalChunks`, `chunkData` | Partial status or `{ok,replayId,replayName}` |
 | `GET /api/replay/local-chunk` | Loopback chunk fallback | Same fields in query, without token | Partial status or confirmation |
 | `POST /api/replay` | Complete replay upload | Token and replay JSON | `{ok,replayId,replayName}` |
-| `GET /api/replays` | Replay library | None | `{replays:[...]}` |
+| `GET /api/replays` | Replay library | None | `{replays:[...]}`; rows include `captureFps`, `stepMs`, and `tickChanges` when recorded, for the configured TPS badge |
 | `GET /api/replay/latest?replayId=...` | Load replay | Optional ID | Persisted replay payload |
 | `GET /api/servers`, `GET /api/snapshot/latest` | Legacy snapshot reads | Optional `serverId` | List or snapshot payload |
 | `GET /api/snapshot/chunk` | Read stored snapshot chunk | Snapshot identifiers | Chunk data |

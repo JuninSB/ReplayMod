@@ -49,29 +49,13 @@ Asset Delivery works automatically for supported `rbxassetid://` references when
 
 With your cookie configured, Replay Mod can request supported public assets through your Roblox session. A cookie does not restore deleted assets or bypass privacy: private assets the account is not permitted to access remain unavailable.
 
-`rbxasset://` references are different: they point to built-in files from a Roblox client installation, not Asset Delivery IDs. To show those files, optionally copy the client's `content/` files into `client-assets/` or configure `SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR` below. Asset Delivery cannot provide missing built-in client files.
+`rbxasset://` references use the built-in files included in `client-assets/`. Asset Delivery resolves `rbxassetid://` references separately and cannot provide missing built-in client files.
 
-#### Optional Roblox session cookie
+#### Roblox session credential
 
-If your Asset Delivery requests need your Roblox session, configure the cookie as a private file on the server machine, outside the project folder. Place your own `.ROBLOSECURITY` value on one line; it may be raw or prefixed with `.ROBLOSECURITY=`. Do not put the value in browser code, the executor script, or chat.
+At startup, Replay Mod offers to create `auth.lzk8` if it is missing. In the server terminal, paste your `.ROBLOSECURITY`, choose and confirm a password of at least six characters, and confirm the recovery warning. Input is hidden. The server saves an AES-256-GCM encrypted file; enter the password on subsequent starts. If you forget it, move or remove the file and create a new one with the credential. A damaged file can be replaced after confirmation; the original is preserved in an `auth.lzk8.invalid-*` backup. An inaccessible file is not changed. Starting without a terminal works without a credential only when no file exists; unlocking an existing file requires an interactive terminal. Legacy plaintext credential settings are no longer read or deleted automatically.
 
-On Linux/macOS/Termux, for example:
-
-```sh
-mkdir -p "$HOME/.config/replay-mod"
-chmod 700 "$HOME/.config/replay-mod"
-# Create this file with a text editor and enter the cookie locally:
-nano "$HOME/.config/replay-mod/roblox-security"
-chmod 600 "$HOME/.config/replay-mod/roblox-security"
-```
-
-On Windows, create `%LOCALAPPDATA%\ReplayMod\roblox-security` and store the value in that file. Then set the private file path in `web/.env` (use forward slashes in Windows paths):
-
-```dotenv
-SERVER_WEBVIEW_ROBLOX_SECURITY_FILE=/home/your-user/.config/replay-mod/roblox-security
-```
-
-Replace the example with the server user's actual path. Restart Replay Mod after changing the `.env` setting. The server reads the cookie file when it makes an asset request. Keep the session private and revoke it in Roblox account security settings when it is no longer needed. A cookie cannot grant permission to assets the account cannot access.
+Keep the encrypted file private and use a strong password. The running server keeps the decryption key in memory and decrypts the cookie for requests, so an attacker controlling the running process or computer may still obtain it. AES does not protect a compromised running machine.
 
 #### Optional Open Cloud key
 
@@ -82,26 +66,6 @@ SERVER_WEBVIEW_ROBLOX_API_KEY=your-key
 ```
 
 Restart the server after editing `.env`. Keep the key on the server; never put it in Luau, browser code, a replay, or Git. Open Cloud keys do not grant access to assets you are not allowed to use. See the [Asset Delivery guide](asset-delivery.md) for supported formats, cache behavior, and troubleshooting.
-
-## Add local Roblox content files
-
-The repository contains an empty `client-assets/` placeholder, not Roblox client files. Missing `rbxasset://` resources such as `textures/face.png` or `textures/studs.dds` stay unavailable until you provide local client assets or configure an accessible source folder. `rbxassetid://` assets are resolved separately through Asset Delivery when permitted.
-
-1. Obtain a client `content/` directory that you are authorized to use. The Roblox Creator Hub documents the Windows Player location as `%LOCALAPPDATA%/Roblox/Versions/<version>/content`.
-2. Copy the needed files into the project's `client-assets/` directory, or set `SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR` to the existing source directory in your private `web/.env`. To use a different local copy path, set `SERVER_WEBVIEW_CLIENT_ASSETS_DIR`.
-3. The preferred option is to point `SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR` directly at the source folder. If you keep a separate local copy, copy the contents of the client `content/` folder directly into `client-assets/`. This keeps built-in textures, sky files, and local material maps together without copying the Player executable. For example, in PowerShell:
-
-   ```powershell
-   $source = "$env:LOCALAPPDATA/Roblox/Versions/version-REPLACE-ME/content"
-   New-Item -ItemType Directory -Force "./client-assets" | Out-Null
-   Copy-Item "$source/*" "./client-assets/" -Recurse -Force
-   ```
-
-   Replace `version-REPLACE-ME` with the folder that contains `RobloxPlayerBeta.exe`. The destination should look like `ReplayMod/client-assets/textures/face.png`, not `ReplayMod/client-assets/content/textures/face.png`. Files from a local `material_textures/` directory also remain under `client-assets/material_textures/` for built-in material maps.
-
-4. Restart the server and verify a known file using the PowerShell request in the [Asset Delivery tutorial](asset-delivery.md#fresh-setup-tutorial-use-an-installed-windows-player-content-folder).
-
-Keep any local copy outside Git; `client-assets/` is ignored by the repository. Do not upload or redistribute the copied files. On Android, Roblox stores app files in private app storage. Termux normally cannot read that private folder, so a fresh Android/Termux-only installation cannot populate the base files from the Roblox app. To use client content with a phone executor, run Replay Mod on a desktop with accessible content and connect over a trusted LAN; otherwise, use permitted `rbxassetid://` assets through Asset Delivery.
 
 ## Configuration
 
@@ -118,7 +82,6 @@ Copy `web/.env.example` to `web/.env` and change only the values you need.
 | `SERVER_WEBVIEW_CONTENT_DIR` | deprecated | Compatibility setting for the previous combined folder. |
 | `SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR` | Unset | Optional accessible Roblox client `content/` directory for local `rbxasset://` paths. The server does not download client files. |
 | `SERVER_WEBVIEW_ROBLOX_API_KEY` | Unset | Optional Open Cloud key for supported operations on assets the key can access. |
-| `SERVER_WEBVIEW_ROBLOX_SECURITY_FILE` | Unset | Optional private file path for a Roblox session credential. Avoid configuring this unless required. |
 
 The app works locally without a public domain or tunnel. For access from another device on a trusted LAN, bind `SERVER_WEBVIEW_HOST=0.0.0.0` and set the base URL to the server device's reachable LAN address. The server displays a temporary login code in its terminal for non-loopback connections. Avoid public networks; the LAN library has no user accounts.
 
@@ -126,7 +89,6 @@ The app works locally without a public domain or tunnel. For access from another
 
 Replays and snapshots are stored under `web/data/`; downloaded files are stored under `assetdelivery/meshes/` and `assetdelivery/textures/`. These are local runtime data, excluded from Git. Back up captures separately if you need to keep them. Use `node tools/migrate-assets.mjs --dry-run` to preview an older `content/` migration, then run it without the preview flag. Use `bash tools/clear-assetdelivery-cache.sh --dry-run` to inspect the Asset Delivery cache before clearing it; the cleaner also recognizes the old `content/cache/node/` location and never removes client assets.
 
-Never commit `.env` files, Roblox cookies, API keys, access codes, generated tokens, captures, or downloaded Roblox assets. If an account session is required for an asset, prefer leaving it unset. Otherwise, keep its file outside the repository and outside shared/public/cloud-synced storage. Example private locations are `$HOME/.config/replay-mod/roblox-security` on Linux/macOS, `%LOCALAPPDATA%/ReplayMod/roblox-security` on Windows, and `~/.config/replay-mod/roblox-security` in Termux. Restrict access (for example, `chmod 600 ~/.config/replay-mod/roblox-security`) and set `SERVER_WEBVIEW_ROBLOX_SECURITY_FILE` to the private file's path. A Roblox session is a sensitive account credential; never paste or share it. Revoke it when no longer needed. Open Cloud keys are separate and do not grant universal access to private downloads. Read the [asset delivery guide](asset-delivery.md) before building an asset integration.
 
 `rbxasset://` files refer to a local Roblox client content directory, not an Asset Delivery asset ID. If the directory is accessible on the server machine, set `SERVER_WEBVIEW_ROBLOX_CLIENT_CONTENT_DIR` to its `content/` path. On Windows, that is inside a versioned directory under `%LOCALAPPDATA%/Roblox/Versions/`. Android apps keep private files sandboxed; Termux may not be able to read the Roblox app's install data. Replay Mod does not download or bundle proprietary client files; see the [Asset Delivery guide](asset-delivery.md).
 

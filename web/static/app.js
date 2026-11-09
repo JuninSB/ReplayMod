@@ -1,5 +1,7 @@
-import { ReplayTimeline, interpolateAngle } from "./replay-timeline.mjs";
-import { toNum, toVec3, readAny, normalizePart, faceName, visibleDecalTexture, isCharHead, textureProxy, textureFetchUrl, meshProxy, usesBoxFaceMaterials } from "./scene-data.mjs?v=clothing-20261108";
+import { chooseSpawnTarget } from "./camera-spawn.mjs";
+import { ReplayTimeline } from "./replay-timeline.mjs";
+import { downloadOffline } from "./offline-export.mjs?v=offline-1";
+import { toNum, toVec3, readAny, normalizePart, faceName, visibleDecalTexture, isCharHead, textureProxy, textureFetchUrl, meshProxy, usesBoxFaceMaterials } from "./scene-data.mjs?v=offline-1";
 import { setCameraVisibility, cameraSees } from "./render-visibility.mjs";
 import { meshTexturePolicy, mapFragmentForMode } from "./render-appearance.mjs?v=render-20261108";
 import { classicClothingLayers, mapClassicClothingBoxUvs, projectClassicClothingMeshUvs } from "./classic-clothing.mjs?v=clothing-20261108";
@@ -19,6 +21,7 @@ const modeWrap = document.querySelector('label[for="modeSelect"]');
 const refreshBtn = document.getElementById("refreshBtn");
 const fullscreenBtn = document.getElementById("fullscreenBtn");
 const homeBtn = document.getElementById("homeBtn");
+const shareBtn = document.getElementById("shareBtn");
 const debugBtn = document.getElementById("debugBtn");
 const debugMenu = document.getElementById("debugMenu");
 const settingsBtn = document.getElementById("settingsBtn");
@@ -2658,7 +2661,7 @@ function buildPartMesh(part, idx) {
   );
 
   mesh.position.set(px, py, pz);
-  mesh.rotation.set(rx, ry, rz);
+  mesh.rotation.set(rx, ry, rz, "YXZ");
   mesh.castShadow = part?.castShadow !== false && transp < 0.95;
   mesh.receiveShadow = true;
   mesh.frustumCulled = true;
@@ -2959,52 +2962,16 @@ function addCharLabels(snapshot) {
 }
 
 function placeCam(parts) {
-  if (!three || parts.length === 0) return;
-  const validMeshes = parts.filter(
-    (mesh) =>
-      mesh &&
-      mesh.position &&
-      Number.isFinite(mesh.position.x) &&
-      Number.isFinite(mesh.position.y) &&
-      Number.isFinite(mesh.position.z)
-  );
-  if (validMeshes.length === 0) return;
-
-  const sortedX = validMeshes.map((m) => m.position.x).sort((a, b) => a - b);
-  const sortedY = validMeshes.map((m) => m.position.y).sort((a, b) => a - b);
-  const sortedZ = validMeshes.map((m) => m.position.z).sort((a, b) => a - b);
-  const mid = Math.floor(sortedX.length / 2);
-  const centerMed = new THREE.Vector3(sortedX[mid], sortedY[mid], sortedZ[mid]);
-
-  const dists = validMeshes
-    .map((m) => m.position.distanceTo(centerMed))
-    .sort((a, b) => a - b);
-  const p95 = dists[Math.max(0, Math.floor((dists.length - 1) * 0.95))] || 0;
-  const cutoff = Math.max(120, p95 * 2.1);
-  const focusMeshes = validMeshes.filter((m) => m.position.distanceTo(centerMed) <= cutoff);
-  const meshes = focusMeshes.length >= Math.max(20, Math.floor(validMeshes.length * 0.25)) ? focusMeshes : validMeshes;
-
-  const box = new THREE.Box3();
-  for (const mesh of meshes) box.expandByObject(mesh);
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  const radius = Math.max(size.x, size.y, size.z, 8);
-  const spawnRadius = Math.min(30, Math.max(16, radius * 0.42));
-  const toPrev = three.camera.position.clone().sub(center);
-  if (toPrev.lengthSq() < 0.0001) toPrev.set(1, 0, 1);
-  toPrev.y = 0;
-  if (toPrev.lengthSq() < 0.0001) toPrev.set(1, 0, 0);
-  toPrev.normalize();
-  const eyeHeight = Math.max(8, Math.min(26, size.y * 0.35 + 8));
-  const spawnPos = center
-    .clone()
-    .add(toPrev.multiplyScalar(spawnRadius))
-    .add(new THREE.Vector3(0, eyeHeight, 0));
-
-  three.camera.position.copy(spawnPos);
+  if (!three) return;
+  const target = chooseSpawnTarget(parts);
+  if (!target) return;
+  const center = target.position.clone();
+  const isPlayer = Boolean(target.userData.part.characterName);
+  if (!isPlayer) center.y += Math.max(0, Number(target.userData.part.size?.y || 0)) / 2;
+  const distance = isPlayer ? 10 : 14;
+  three.camera.position.copy(center).add(new THREE.Vector3(distance * 0.7, isPlayer ? 4 : 7, distance));
   three.camera.up.set(0, 1, 0);
   three.camera.lookAt(center);
-  three.camera.rotation.z = 0;
   three.controls.target.copy(center);
   three.controls.update();
 }
@@ -3543,9 +3510,9 @@ function replayExplorerKey(snapshot) {
   const parts = Array.isArray(snapshot?.parts) ? snapshot.parts : [];
   const decals = Array.isArray(snapshot?.decals) ? snapshot.decals : [];
   return [
-    parts.map((part) => `${part.path || ""}\0${part.name || ""}\0${part.className || ""}\0${part.characterName || ""}`).join("\1"),
-    decals.map((decal) => `${decal.id || decal.instancePath || ""}\0${decal.partPath || ""}`).join("\1"),
-  ].join("\2");
+    parts.map((part) => `${part.path || ""}\0${part.name || ""}\0${part.className || ""}\0${part.characterName || ""}`).join("\x01"),
+    decals.map((decal) => `${decal.id || decal.instancePath || ""}\0${decal.partPath || ""}`).join("\x01"),
+  ].join("\x02");
 }
 
 async function loadServers() {
@@ -3684,6 +3651,21 @@ function renderServerCards() {
       const nm = document.createElement("div");
       nm.className = "server-card-name";
       nm.textContent = String(r.replayName || r.replayId || "Replay");
+      const rates = [Number(r.captureFps) || (Number(r.stepMs) > 0 ? 1000 / Number(r.stepMs) : 0),
+        ...(Array.isArray(r.tickChanges) ? r.tickChanges.map((change) => Number(change.fps)) : [])]
+        .filter((rate) => Number.isFinite(rate) && rate > 0);
+      const badge = document.createElement("span");
+      badge.className = "server-card-tps";
+      const low = Math.round(Math.min(...rates));
+      const high = Math.round(Math.max(...rates));
+      badge.textContent = rates.length ? `${low === high ? high : `${low}–${high}`} TPS` : "TPS —";
+      badge.title = "Configured capture ticks per second";
+      if (rates.length) {
+        const quality = Math.max(5, Math.min(60, low));
+        const hue = quality <= 30 ? (quality - 5) / 25 * 120 : 120 + (quality - 30) / 30 * 90;
+        badge.style.setProperty("--tps-color", `hsl(${hue} 85% 72%)`);
+        badge.style.setProperty("--tps-bg", `hsl(${hue} 40% 12%)`);
+      }
       const sub = document.createElement("div");
       sub.className = "server-card-sub";
       sub.textContent = `${fmtMs(r.durationMs)} · ${r.chatCount ?? 0} chat messages · ${r.placeId ?? "Local"}`;
@@ -3691,6 +3673,7 @@ function renderServerCards() {
       meta.appendChild(sub);
       card.appendChild(img);
       card.appendChild(meta);
+      card.appendChild(badge);
       card.addEventListener("click", async () => {
         serverSelect.value = String(r.replayId || "");
         showViewer();
@@ -3979,22 +3962,25 @@ function repLerp(a, b, t) {
   return av + (bv - av) * t;
 }
 
+let replayPoseEuler, replayPoseFrom, replayPoseTo;
 function repSet(mesh, p, alpha = 1, src = null) {
   if (!mesh || !p) return;
   const q = src || p;
   const px = alpha >= 1 ? p?.position?.x : repLerp(q?.position?.x, p?.position?.x, alpha);
   const py = alpha >= 1 ? p?.position?.y : repLerp(q?.position?.y, p?.position?.y, alpha);
   const pz = alpha >= 1 ? p?.position?.z : repLerp(q?.position?.z, p?.position?.z, alpha);
-  const ox = alpha >= 1 ? p?.orientation?.x : interpolateAngle(q?.orientation?.x, p?.orientation?.x, alpha);
-  const oy = alpha >= 1 ? p?.orientation?.y : interpolateAngle(q?.orientation?.y, p?.orientation?.y, alpha);
-  const oz = alpha >= 1 ? p?.orientation?.z : interpolateAngle(q?.orientation?.z, p?.orientation?.z, alpha);
   const tr = alpha >= 1 ? p?.transparency : repLerp(q?.transparency, p?.transparency, alpha);
   mesh.position.set(Number(px || 0), Number(py || 0), Number(pz || 0));
-  mesh.rotation.set(
-    THREE.MathUtils.degToRad(Number(ox || 0)),
-    THREE.MathUtils.degToRad(Number(oy || 0)),
-    THREE.MathUtils.degToRad(Number(oz || 0))
-  );
+  replayPoseEuler ||= new THREE.Euler(0, 0, 0, "YXZ");
+  replayPoseFrom ||= new THREE.Quaternion();
+  replayPoseTo ||= new THREE.Quaternion();
+  const setRotation = (target, part) => target.setFromEuler(replayPoseEuler.set(
+    THREE.MathUtils.degToRad(Number(part?.orientation?.x || 0)),
+    THREE.MathUtils.degToRad(Number(part?.orientation?.y || 0)),
+    THREE.MathUtils.degToRad(Number(part?.orientation?.z || 0)), "YXZ"));
+  setRotation(replayPoseFrom, q);
+  setRotation(replayPoseTo, p);
+  mesh.quaternion.copy(replayPoseFrom.slerp(replayPoseTo, alpha));
   if (mesh.material) {
     const matArr = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const mat of matArr) {
@@ -4527,8 +4513,8 @@ async function copyShareUrl() {
 
 async function openShared() {
   const url = new URL(window.location.href);
-  const id = String(url.searchParams.get("id") || "").trim();
-  const mode = String(url.searchParams.get("mode") || "").trim().toLowerCase();
+  const id = String(globalThis.__REPLAY_OFFLINE__?.id || url.searchParams.get("id") || "").trim();
+  const mode = String(globalThis.__REPLAY_OFFLINE__?.mode || url.searchParams.get("mode") || "").trim().toLowerCase();
   if (!id) return false;
   curMode = mode === "rep" ? "rep" : "snap";
   if (modeSelect) modeSelect.value = curMode;
@@ -4591,8 +4577,8 @@ function updateTopbarMode() {
   if (fullscreenBtn) fullscreenBtn.style.display = viewerOpen ? "" : "none";
   if (debugBtn) debugBtn.style.display = viewerOpen ? "" : "none";
   if (settingsBtn) settingsBtn.style.display = viewerOpen ? "" : "none";
-  if (serverWrap) serverWrap.style.display = viewerOpen ? "none" : "flex";
-  if (modeWrap) modeWrap.style.display = "flex";
+  if (serverWrap) serverWrap.style.display = "none";
+  if (modeWrap) modeWrap.style.display = viewerOpen ? "flex" : "none";
   if (debugMenu && !viewerOpen) setDebugMenuOpen(false);
   if (settingsMenu && !viewerOpen) setSettingsMenuOpen(false);
   if (!viewerOpen) setSidebarOpen(false);
@@ -4887,10 +4873,60 @@ if (saveThumbnailBtn) {
 
 if (shareBtn) {
   shareBtn.style.pointerEvents = "auto";
-  shareBtn.addEventListener("click", async () => {
-    await copyShareUrl();
+  shareBtn.addEventListener("click", () => {
+    const dialog = document.getElementById("shareDialog");
+    const offline = globalThis.__REPLAY_OFFLINE__;
+    document.getElementById("shareLinkBtn").disabled = Boolean(offline);
+    document.getElementById("shareOfflineBtn").disabled = Boolean(offline);
+    if (offline?.failures?.length) {
+      document.getElementById("shareStatus").textContent = "Assets missing from this offline file:";
+      showMissingAssets(offline.failures);
+    }
+    dialog.showModal();
   });
 }
+
+function showMissingAssets(urls) {
+  const list = document.getElementById("shareMissing");
+  list.replaceChildren();
+  for (const url of urls) {
+    const li = document.createElement("li");
+    li.textContent = new URL(url, "http://local").searchParams.get("src") || url;
+    list.appendChild(li);
+  }
+}
+document.getElementById("shareCloseBtn")?.addEventListener("click", () => document.getElementById("shareDialog").close());
+document.getElementById("shareLinkBtn")?.addEventListener("click", async () => {
+  const copied = await copyShareUrl();
+  document.getElementById("shareStatus").textContent = copied ? "Link copied. The server must be reachable to open it." : "Could not copy link.";
+});
+document.getElementById("shareOfflineBtn")?.addEventListener("click", async () => {
+  const button = document.getElementById("shareOfflineBtn");
+  const dialog = document.getElementById("shareDialog");
+  const status = document.getElementById("shareStatus");
+  const proceed = document.getElementById("continueOfflineBtn");
+  button.disabled = true;
+  showMissingAssets([]);
+  try {
+    await downloadOffline({mode:curMode, id:serverSelect.value,
+      progress:message => { status.textContent = message; },
+      confirmMissing:urls => new Promise(resolve => {
+        if (!dialog.open) { resolve(false); return; }
+        status.textContent = `${urls.length} assets could not be included. Exporting anyway may leave objects or textures missing. Close to cancel.`;
+        showMissingAssets(urls); proceed.hidden = false;
+        const finish = accepted => {
+          proceed.hidden = true;
+          proceed.removeEventListener("click", accept);
+          dialog.removeEventListener("close", cancel);
+          resolve(accepted);
+        };
+        const accept = () => finish(true), cancel = () => finish(false);
+        proceed.addEventListener("click", accept);
+        dialog.addEventListener("close", cancel);
+      })});
+  } catch (error) { status.textContent = "Export failed: " + error.message; }
+  finally { button.disabled = false; }
+});
 
 if (replayPlayBtn) {
   replayPlayBtn.addEventListener("click", () => {
