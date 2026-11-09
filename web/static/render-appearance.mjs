@@ -35,7 +35,7 @@ export function meshTexturePolicy(part) {
     doubleSided: Boolean(part?.doubleSided),
     partTransparency: Math.max(
       0,
-      Math.min(0.95, Number(part?.transparency) || 0),
+      Math.min(1, Number(part?.transparency) || 0),
     ),
     alphaTest: mode === "cutout" ? 0.03 : 0,
   };

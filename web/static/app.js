@@ -3,7 +3,7 @@ import { postEffectShader } from "./post-effects.mjs";
 import { AssetLoads } from "./asset-loads.mjs";
 import { chooseSpawnTarget } from "./camera-spawn.mjs";
 import { buildTerrainGeometries } from "./terrain-mesh.mjs";
-import { ReplayTimeline, isPoseOnlyPatch } from "./replay-timeline.mjs";
+import { ReplayTimeline, isPoseOnlyPatch } from "./replay-timeline.mjs?v=perf-20261109";
 import { joystickVector } from "./touch-joystick.mjs";
 import { ReplayAudio } from "./replay-audio.mjs";
 import { ScreenGuiView } from "./screen-gui.mjs";
@@ -13,7 +13,7 @@ import { decodeDxt1DDS, surfaceKind, surfaceRepeats, surfacePixels } from "./sur
 import { downloadOffline, offlineCaptureRow } from "./offline-export.mjs?v=offline-3";
 import { toNum, toVec3, readAny, normalizePart, faceName, visibleDecalTexture, isCharHead, textureProxy, textureFetchUrl, meshProxy, usesBoxFaceMaterials } from "./scene-data.mjs?v=render-20261109-2";
 import { setCameraVisibility, cameraSees } from "./render-visibility.mjs";
-import { meshTexturePolicy, mapFragmentForMode } from "./render-appearance.mjs?v=render-20261108";
+import { meshTexturePolicy, mapFragmentForMode } from "./render-appearance.mjs?v=visibility-20261109";
 import { classicClothingLayers, mapClassicClothingBoxUvs, projectClassicClothingMeshUvs } from "./classic-clothing.mjs?v=clothing-20261108";
 
 let THREE = null;
@@ -1584,7 +1584,7 @@ function makeSurfaceFaceMats(mesh, part, patterns) {
     texture.needsUpdate = true;
     const mechanical = ['hinge', 'motor', 'steppingmotor'].includes(kind);
     const tiled = ['studs', 'inlet', 'universal'].includes(kind);
-    const material = new THREE.MeshStandardMaterial({ transparent: true, opacity: (mechanical ? 1 : 0.65) * (1 - Math.max(0, Math.min(1, toNum(part.transparency, 0)))), roughness: 0.72, metalness: 0.02, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, color: mechanical ? '#ffffff' : hexColor(part.color3 || '#ffffff'), map: texture, bumpMap: tiled ? texture : null, bumpScale: tiled ? 0.08 : 0 });
+    const material = new THREE.MeshStandardMaterial({ visible: toNum(part.transparency, 0) < 1, transparent: true, opacity: (mechanical ? 1 : 0.65) * (1 - Math.max(0, Math.min(1, toNum(part.transparency, 0)))), roughness: 0.72, metalness: 0.02, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, color: mechanical ? '#ffffff' : hexColor(part.color3 || '#ffffff'), map: texture, bumpMap: tiled ? texture : null, bumpScale: tiled ? 0.08 : 0 });
     material.userData.surfaceOpacity = mechanical ? 1 : 0.65;
     return material;
   };
@@ -1698,11 +1698,12 @@ function applyClothingOverlays(mesh, part, currentAppearance) {
       if (!clothingGeometry) return;
       const material = new THREE.MeshStandardMaterial({
         color: hexColor(layer.tint, "#ffffff"),
+        visible: toNum(part.transparency, 0) < 1,
         map: texture,
         roughness: 0.9,
         metalness: 0,
         transparent: true,
-        opacity: 1 - Math.max(0, Math.min(0.95, toNum(part.transparency, 0))),
+        opacity: 1 - Math.max(0, Math.min(1, toNum(part.transparency, 0))),
         alphaTest: 0.02,
         depthWrite: false,
         polygonOffset: true,
@@ -1740,6 +1741,7 @@ function applyMatTex(mesh, part, version) {
   const profile = materialProfile(part?.material);
   const texturePolicy = meshTexturePolicy(part);
   if (baseMat) {
+    baseMat.visible = toNum(part?.transparency, 0) < 1;
     baseMat.roughness = part?.surfaceAppearance?.roughnessMap ? 1 : profile.roughness;
     baseMat.metalness = profile.metalness;
     const previous = baseMat.userData?.replayTexturePolicy;
@@ -1761,7 +1763,7 @@ function applyMatTex(mesh, part, version) {
     else {
       baseMat.alphaTest = 0;
       baseMat.transparent = toNum(part?.transparency, 0) > 0;
-      baseMat.opacity = 1 - Math.max(0, Math.min(0.95, toNum(part?.transparency, 0)));
+      baseMat.opacity = 1 - Math.max(0, Math.min(1, toNum(part?.transparency, 0)));
       baseMat.depthWrite = !baseMat.transparent;
       baseMat.onBeforeCompile = () => {};
       baseMat.customProgramCacheKey = () => "";
@@ -2882,6 +2884,7 @@ function buildPartMesh(part, idx) {
     geometry,
     new THREE.MeshStandardMaterial({
       color,
+      visible: transp < 1,
       transparent: transp > 0,
       opacity: 1 - transp,
       roughness: profile.roughness,
@@ -4481,7 +4484,10 @@ function repSet(mesh, p, alpha = 1, src = null) {
     studOverlay.quaternion.copy(mesh.quaternion);
     studOverlay.scale.copy(mesh.scale).multiplyScalar(1.002);
     for (const material of Array.isArray(studOverlay.material) ? studOverlay.material : [studOverlay.material]) {
-      if (material?.map) material.opacity = (material.userData.surfaceOpacity ?? 0.65) * (1 - Math.max(0, Math.min(1, Number(tr || 0))));
+      if (material?.map) {
+        material.visible = Number(tr || 0) < 1;
+        material.opacity = (material.userData.surfaceOpacity ?? 0.65) * (1 - Math.max(0, Math.min(1, Number(tr || 0))));
+      }
     }
   }
   if ((moved || rotated) && mesh.castShadow) shadowSceneDirty = true;
@@ -4490,6 +4496,7 @@ function repSet(mesh, p, alpha = 1, src = null) {
     for (const mat of matArr) {
       if (!mat) continue;
       const tv = Math.max(0, Math.min(1, Number(tr || 0)));
+      mat.visible = tv < 1;
       const transparent = tv > 0 || Boolean(mat.map && mat.userData?.replayTexturePolicy?.mode === "blend");
       if (mat.transparent !== transparent || mat.depthWrite !== !transparent) {
         mat.transparent = transparent; mat.depthWrite = !transparent; mat.needsUpdate = true;
@@ -4498,7 +4505,7 @@ function repSet(mesh, p, alpha = 1, src = null) {
     }
   }
   const clothingOpacity = 1 - Math.max(0, Math.min(1, Number(tr || 0)));
-  for (const overlay of mesh.userData.clothingOverlays || []) overlay.material.opacity = clothingOpacity;
+  for (const overlay of mesh.userData.clothingOverlays || []) { overlay.material.visible = clothingOpacity > 0; overlay.material.opacity = clothingOpacity; }
 }
 
 function repNeedGeo(a, b) {

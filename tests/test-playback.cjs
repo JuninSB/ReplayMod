@@ -188,6 +188,32 @@ test("viewer edits keep invisible objects visible across playback updates withou
   assert.equal(context.mesh.position.y, 3);
   assert.equal(after.transparency, 1);
   assert.equal(after.position.x, 2);
+  const decal = new THREE.Object3D();
+  context.mesh.add(decal);
+  viewerOverrides.clear();
+  vm.runInContext('repSet(mesh, after)', context);
+  assert.equal(context.mesh.material.visible, false);
+  assert.equal(context.mesh.visible, true);
+  assert.equal(decal.visible, true);
+  viewerOverrides.set('part_1', { transparency: 0 });
+  vm.runInContext('repSet(mesh, after)', context);
+  assert.equal(context.mesh.material.visible, true);
+});
+
+test("textured parts preserve completely transparent state", async () => {
+  const { meshTexturePolicy } = await import('../web/static/render-appearance.mjs');
+  assert.equal(meshTexturePolicy({ className: 'MeshPart', textureId: 'rbxassetid://1', transparency: 1 }).partTransparency, 1);
+});
+
+test("fully transparent parts start without a drawable material", () => {
+  const THREE = require('three');
+  const source = readFileSync(path.join(__dirname, '../web/static/app.js'), 'utf8');
+  const context = vm.createContext({ THREE, RoundedBoxGeometryClass: null, dbg: { smoothLighting: true }, latestSnapshot: null, toNum: (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback, hexColor: value => value, materialProfile: () => ({ roughness: 0.5, metalness: 0 }) });
+  vm.runInContext(source.slice(source.indexOf('function buildPartMesh('), source.indexOf('function decalFaceTf(')), context);
+  const mesh = context.buildPartMesh({ size: { x: 1, y: 1, z: 1 }, position: { x: 0, y: 0, z: 0 }, transparency: 1 }, 0);
+  assert.equal(mesh.material.visible, false);
+  assert.equal(mesh.material.opacity, 0);
+  assert.equal(mesh.visible, true);
 });
 
 test("replay audio follows timeline pause, speed and a moving spatial source", async () => {
