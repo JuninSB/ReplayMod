@@ -29,6 +29,10 @@ Post effects are captured from both Lighting and CurrentCamera. New captures pre
 
 SpecialMesh MeshType is recorded independently from MeshId. A built-in R6 Head is resolved to the bundled `avatar/heads/head.mesh`; a Part with no SpecialMesh remains a block. Older captures with a Head SpecialMesh scale but missing its type use this head as a compatibility fallback. Head scaling is nonstandard in Roblox (see [DataModelMesh.Scale](https://create.roblox.com/docs/reference/engine/classes/DataModelMesh/Scale)), so exact unusual custom scaling still needs in-game comparison. Front-face decals are projected onto the rounded surface. CharacterMesh body meshes are captured for R6; otherwise classic body blocks have a subtle bevel. Player labels are text with a small outline, distance-limited and capped in screen size.
 
+## Terrain
+
+New captures read a bounded 160 × 96 × 160 stud region around the local player (or camera fallback) at Roblox's required 4-stud voxel resolution. Only exposed voxels are saved; the viewer emits only their outward faces and groups them by material. This makes terrain rocks and hills visible without creating a draw call for every voxel. It is a coarse block reconstruction: smooth terrain blending, water behavior, decorations, custom terrain textures, terrain changes during the replay, and terrain beyond the captured window are not reproduced. Existing captures without `base.terrain` must be recorded again.
+
 ## Loading and retries
 
 The viewer deduplicates asset requests and keeps successful results while rebuilding scene objects. Each failed asset is tried twice automatically. The progress panel shows mesh and texture counts and a failed-asset list; Retry requests only failures. Close dismisses the panel for the current capture, and Menu → Loading status reopens it. Optional missing material maps use existing material fallbacks. Offline export tries each asset three times before presenting the missing list and Export anyway.
@@ -37,4 +41,6 @@ The viewer deduplicates asset requests and keeps successful results while rebuil
 
 Menu is collapsed on entry. Explorer, thumbnail capture, Rendering, Camera, Library and Share are inside it. FPS has its own position below the header. The scene movement hint is removed. All visible controls are in English.
 
-Solid-color parts keep their captured color when no material map is available; Neon uses emissive color. Menu → Hide UI hides the controls; Show UI restores them. Rendering → Scene brightness adjusts the viewer exposure relative to the capture. Interactive controls prevent touch text selection while diagnostic text stays selectable.
+Solid-color parts keep their captured color when no material map is available; Neon uses emissive color. Recorded Studs/Inlet surfaces use the local DDS texture and fall back to a procedural stud pattern if a mobile browser cannot decode DDS. Menu → Hide UI hides the controls; Show UI restores them. Rendering → Scene brightness adjusts the viewer exposure relative to the capture. Interactive controls prevent touch text selection while diagnostic text stays selectable.
+
+On compact viewports, the viewer caps its render resolution to 1×, disables antialiasing, uses a 1024-pixel soft shadow map, skips the post-processing composer when no recorded effect needs it, and refreshes the shadow map only when the scene or camera-shadow coverage changes. Mesh materials use front-side rendering and frustum culling; source mesh triangles are preserved rather than destructively simplified.

@@ -734,12 +734,65 @@ local function walkWorkspace(visit)
     end
     return true
 end
+-- Terrain is not a BasePart, so the ordinary scene walker cannot represent
+-- terrain hills or rocks. Read a bounded voxel window once at capture start.
+-- The browser removes interior faces, which keeps the payload and draw calls
+-- practical while clearly documenting that smooth terrain is approximated.
+local function readTerrain(cameraData)
+    local terrain = workspace.Terrain
+    if not terrain then return nil end
+    local focus = cameraData and cameraData.position and Vector3.new(cameraData.position.x, cameraData.position.y, cameraData.position.z)
+    local character = player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if root and root:IsA("BasePart") then focus = root.Position end
+    if not focus then return nil end
+    local span, height, cell, maxCells = 160, 96, 4, 12000
+    local half = span * 0.5
+    local min = Vector3.new(focus.X - half, focus.Y - height * 0.58, focus.Z - half)
+    local max = Vector3.new(focus.X + half, focus.Y + height * 0.42, focus.Z + half)
+    local region = Region3.new(min, max):ExpandToGrid(cell)
+    local ok, materials, occupancies = pcall(function()
+        return terrain:ReadVoxels(region, cell)
+    end)
+    if not ok or not materials or not occupancies or not materials.Size then return nil end
+    local size = materials.Size
+    local origin = region.CFrame.Position - region.Size * 0.5
+    local function filled(x, y, z)
+        if x < 1 or y < 1 or z < 1 or x > size.X or y > size.Y or z > size.Z then return false end
+        return (occupancies[x][y][z] or 0) >= 0.5 and materials[x][y][z] ~= Enum.Material.Air
+    end
+    local cells, count, stopped = {}, 0, false
+    for x = 1, size.X do
+        if stopped then break end
+        for y = 1, size.Y do
+            if stopped then break end
+            for z = 1, size.Z do
+                if filled(x, y, z) then
+                    local exposed = not filled(x + 1, y, z) or not filled(x - 1, y, z)
+                        or not filled(x, y + 1, z) or not filled(x, y - 1, z)
+                        or not filled(x, y, z + 1) or not filled(x, y, z - 1)
+                    if exposed then
+                        count += 1
+                        if count > maxCells then stopped = true; break end
+                        table.insert(cells, {x = x - 1, y = y - 1, z = z - 1,
+                            m = materials[x][y][z].Name,
+                            o = math.floor(math.clamp(occupancies[x][y][z] or 0, 0, 1) * 255 + 0.5)})
+                    end
+                end
+            end
+            if y % 4 == 0 then task.wait() end
+        end
+    end
+    if #cells == 0 then return nil end
+    return {cellSize = cell, origin = v3(origin), cells = cells, truncated = stopped}
+end
 local function begin()
     preparing = true
     status.Text = "Scanning the scene in batches…"
     action.Text = "Preparing…"
+    local initialCamera = readCamera()
     captured = {kind = captureMode, stepMs = 1000 / captureFps, captureFps = captureFps, tickChanges = {}, serverId = srvId(), placeId = game.PlaceId, replayName = nameInput.Text, snapshotName = nameInput.Text,
-        base = {parts = {}, decals = {}, camera = readCamera(), lighting = readLighting()}, frameBlocks = {}, chatEvents = {}}
+        base = {parts = {}, decals = {}, camera = initialCamera, lighting = readLighting(), terrain = readTerrain(initialCamera)}, frameBlocks = {}, chatEvents = {}}
     lastLighting = captured.base.lighting
     encodedChunks = nil
     frameBuffer, frameBufferBytes = {}, 0

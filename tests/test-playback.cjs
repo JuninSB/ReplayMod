@@ -17,6 +17,20 @@ test("shadow range limits distant shadows without overriding disabled casters", 
   assert.equal(partCastsNearby({...part,transparency:1},{x:1,y:0,z:0},camera,'far'),false);
 });
 
+test("terrain reconstruction emits only exposed voxel faces", async () => {
+  const THREE = require("three");
+  const { buildTerrainGeometries, terrainSurfaceFaceCount } = await import("../web/static/terrain-mesh.mjs");
+  const cells = [
+    { x: 0, y: 0, z: 0, m: "Pebble", o: 255 },
+    { x: 1, y: 0, z: 0, m: "Pebble", o: 255 },
+  ];
+  assert.equal(terrainSurfaceFaceCount(cells), 10);
+  const geometries = buildTerrainGeometries({ cellSize: 4, origin: { x: 0, y: 0, z: 0 }, cells }, THREE);
+  assert.equal(geometries.length, 1);
+  assert.equal(geometries[0].material, "Pebble");
+  assert.equal(geometries[0].geometry.attributes.position.count, 60);
+});
+
 test("asset loading retries twice, shares successes and retries only failed jobs", async () => {
   const { AssetLoads } = await import("../web/static/asset-loads.mjs");
   const loads = new AssetLoads();
@@ -58,7 +72,7 @@ test("initial camera prefers a living visible player, then a loaded part", async
 });
 
 test("offline export includes the complete viewer module graph and capture asset references", async () => {
-  const { collectModules, captureAssets } = await import("../web/static/offline-export.mjs");
+  const { collectModules, captureAssets, offlineCaptureRow } = await import("../web/static/offline-export.mjs");
   const modules = await collectModules("/static/app.js", file => Promise.resolve(readFileSync(path.join(__dirname, "../web", file), "utf8")));
   assert.ok(modules["/static/vendor/three/build/three.module.js"]);
   assert.ok(modules["/static/vendor/three/examples/jsm/loaders/OBJLoader.js"]);
@@ -68,6 +82,14 @@ test("offline export includes the complete viewer module graph and capture asset
   const { required } = captureAssets({base:{parts:[{meshId:"rbxassetid://123 ", textureId:"rbxassetid://456", clothing:{shirt:"rbxassetid://789"}}]},frames:[{u:[{textureId:"rbxassetid://999"}]}]});
   assert.equal(required.size, 4);
   assert.ok(required.has("/api/asset/mesh?src=rbxassetid%3A%2F%2F123"));
+  assert.deepEqual(
+    offlineCaptureRow({ mode: "rep", id: "replay-1", capture: { replayName: "One" } }),
+    { replayName: "One", thumbnailUrl: null, replayId: "replay-1" },
+  );
+  assert.deepEqual(
+    offlineCaptureRow({ mode: "snap", id: "snapshot-1", capture: { snapshotName: "One" } }),
+    { snapshotName: "One", thumbnailUrl: null, serverId: "snapshot-1" },
+  );
 });
 
 test("recorded YXZ orientation keeps the limb rotation axes correct", () => {

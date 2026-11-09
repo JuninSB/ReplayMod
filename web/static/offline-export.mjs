@@ -52,7 +52,7 @@ export function captureAssets(capture) {
       for (const [k, v] of Object.entries(value)) visit(v, k);
       return;
     }
-    if (key === "material" && typeof value === "string") materials.add(value);
+    if ((key === "material" || key === "m") && typeof value === "string") materials.add(value);
     if (typeof value !== "string" || !value.trim()) return;
     if (
       /^(rbxasset(?:id)?:\/\/|https?:\/\/)/i.test(value.trim()) &&
@@ -67,6 +67,24 @@ export function captureAssets(capture) {
   return { required, materials };
 }
 
+// The offline file has one capture, so it must not depend on rebuilding the
+// normal server library before opening it. Keep the original capture intact
+// while supplying the identity fields the viewer's selector expects.
+export function offlineCaptureRow(offline) {
+  const capture = offline?.capture && typeof offline.capture === "object"
+    ? offline.capture
+    : {};
+  const mode = offline?.mode === "rep" ? "rep" : "snap";
+  const id = String(
+    offline?.id || (mode === "rep" ? capture.replayId : capture.serverId) || "",
+  ).trim();
+  return {
+    ...capture,
+    thumbnailUrl: null,
+    ...(mode === "rep" ? { replayId: id } : { serverId: id }),
+  };
+}
+
 // This function is serialized into the exported file. No server or CDN is used.
 function startOffline() {
   const pack = JSON.parse(document.getElementById("offline-data").textContent);
@@ -79,6 +97,7 @@ function startOffline() {
     assets,
     mode: pack.mode,
     id: pack.id,
+    capture: pack.capture,
     failures: pack.failures,
   };
   const originalFetch = window.fetch.bind(window);

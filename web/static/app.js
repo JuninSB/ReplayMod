@@ -2,8 +2,9 @@ import { shadowRange, partCastsNearby } from "./shadow-range.mjs";
 import { postEffectShader } from "./post-effects.mjs";
 import { AssetLoads } from "./asset-loads.mjs";
 import { chooseSpawnTarget } from "./camera-spawn.mjs";
+import { buildTerrainGeometries } from "./terrain-mesh.mjs";
 import { ReplayTimeline } from "./replay-timeline.mjs";
-import { downloadOffline } from "./offline-export.mjs?v=offline-2";
+import { downloadOffline, offlineCaptureRow } from "./offline-export.mjs?v=offline-3";
 import { toNum, toVec3, readAny, normalizePart, faceName, visibleDecalTexture, isCharHead, textureProxy, textureFetchUrl, meshProxy, usesBoxFaceMaterials } from "./scene-data.mjs?v=render-20261109-2";
 import { setCameraVisibility, cameraSees } from "./render-visibility.mjs";
 import { meshTexturePolicy, mapFragmentForMode } from "./render-appearance.mjs?v=render-20261108";
@@ -113,6 +114,7 @@ let repRdrAt = 0;
 let repCam = true;
 let three = null;
 let partMeshes = [];
+let terrainMeshes = [];
 let decalPlanes = [];
 const decalPlaneById = new Map();
 let characterLabels = [];
@@ -157,6 +159,8 @@ const MESH_CHUNK_TRI_THRESHOLD = 2200;
 const MESH_CHUNK_MAX = 24;
 let occLastAt = 0;
 let shadowCoverageAt = 0;
+let shadowCoverageState = null;
+let shadowSceneDirty = true;
 let occProj = null;
 let occFrustum = null;
 let occRay = null;
@@ -677,7 +681,7 @@ function apShdwMd() {
   renderer.shadowMap.type = dbg.smoothShadows ? THREE.PCFShadowMap : THREE.BasicShadowMap;
   const mobile = viewport?.clientWidth < 700;
   const preferredSize = mobile
-    ? (dbg.smoothShadows ? 1536 : 1024)
+    ? (dbg.smoothShadows ? 1024 : 768)
     : (dbg.smoothShadows ? 2048 : 1024);
   const targetShadowSize = Math.min(preferredSize, renderer.capabilities?.maxTextureSize || preferredSize);
   const currentSize = Number(three.dir.shadow?.mapSize?.width || 0);
@@ -701,6 +705,23 @@ function apShdwMd() {
     if (light.shadow?.camera) light.shadow.camera.layers.enable(1);
     if (light.shadow) light.shadow.needsUpdate = true;
   }
+}
+
+function scenePixelRatio(width = viewport?.clientWidth || window.innerWidth || 1280) {
+  const deviceRatio = Number(window.devicePixelRatio) || 1;
+  // A high-density phone at 2× or 3× makes every scene, shadow map and post
+  // pass render several times more pixels. Keep the interactive viewer at a
+  // stable mobile budget; desktop can still use a little extra sharpness.
+  return Math.min(deviceRatio, width < 700 ? 1 : 1.5);
+}
+
+function shouldUseComposer() {
+  return Boolean(
+    three?.composer &&
+      dbg.shadersOn &&
+      shdReady &&
+      (three.bloom?.enabled || three.bokeh?.enabled || three.post?.enabled),
+  );
 }
 
 function textureLabelText(mesh) {
@@ -927,6 +948,60 @@ function loadMatMaps(rawMaterial) {
   }));
   materialPbrMapCache.set(key, promise);
   return promise;
+}
+
+function terrainColor(rawMaterial) {
+  const colors = {
+    grass: "#6d8650", ground: "#786d59", rock: "#77746f", slate: "#687080",
+    pebble: "#766d5c", sand: "#c9b277", mud: "#715442", snow: "#eef3f6",
+    ice: "#b9ddeb", water: "#4f96c8", brick: "#965b4a", concrete: "#8b8b86",
+  };
+  return colors[normKey(normMat(rawMaterial))] || "#85817a";
+}
+
+function terrainOf(snapshot) {
+  const terrain = snapshot?.terrain || snapshot?.base?.terrain;
+  return terrain && typeof terrain === "object" ? terrain : null;
+}
+
+function addTerrain(snapshot, version) {
+  const terrain = terrainOf(snapshot);
+  if (!terrain || !three || !THREE) return;
+  for (const group of buildTerrainGeometries(terrain, THREE)) {
+    const material = new THREE.MeshStandardMaterial({
+      color: terrainColor(group.material),
+      roughness: materialProfile(group.material).roughness,
+      metalness: materialProfile(group.material).metalness,
+      side: THREE.FrontSide,
+    });
+    const mesh = new THREE.Mesh(group.geometry, material);
+    mesh.name = `Terrain:${group.material}`;
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = true;
+    mesh.userData.terrain = true;
+    three.scene.add(mesh);
+    terrainMeshes.push(mesh);
+    const maps = loadMatMaps(group.material);
+    maps?.then((loaded) => {
+      if (version !== renderVersion || !mesh.material) return;
+      const set = (source, slot, color = false) => {
+        if (!source) return;
+        const texture = source.clone();
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        if (color && "colorSpace" in texture) texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = three.renderer.capabilities.getMaxAnisotropy();
+        texture.needsUpdate = true;
+        material[slot] = texture;
+      };
+      set(loaded.colorMap, "map", true);
+      set(loaded.normalMap, "normalMap");
+      set(loaded.roughnessMap, "roughnessMap");
+      set(loaded.metalnessMap, "metalnessMap");
+      material.needsUpdate = true;
+    });
+  }
 }
 
 function loadLegacyMatTex(rawMaterial) {
@@ -1664,7 +1739,12 @@ function applyMatTex(mesh, part, version) {
   }
   if (hasStudsSurface(part) && isPlasticMat(part?.material)) {
     loadTexSrc("rbxasset://textures/studs.dds", (sourceTex) => {
-      if (!currentAppearance() || !sourceTex) return;
+      if (!currentAppearance()) return;
+      // Some mobile WebGL implementations cannot decode the DDS even though
+      // the local client file exists. Keep the recorded Studs/Inlet surface
+      // visible with the procedural fallback rather than silently removing it.
+      sourceTex ||= getStudTex();
+      if (!sourceTex) return;
       const isBox = String(part?.shape || "").replace("Enum.PartType.", "").toLowerCase() === "block";
       if (isBox) {
         const mats = makeStudsFaceMats(mesh, part, sourceTex);
@@ -2095,15 +2175,22 @@ async function setupThree() {
   camera.position.set(18, 18, 28);
   camera.lookAt(0, 4, 0);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   const bootW = Math.max(320, viewport?.clientWidth || viewport?.offsetWidth || window.innerWidth || 1280);
   const bootH = Math.max(220, viewport?.clientHeight || viewport?.offsetHeight || Math.floor((window.innerHeight || 720) * 0.7));
+  const renderer = new THREE.WebGLRenderer({
+    antialias: bootW >= 700,
+    preserveDrawingBuffer: true,
+  });
+  renderer.setPixelRatio(scenePixelRatio(bootW));
   renderer.setSize(bootW, bootH);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.25;
   renderer.useLegacyLights = false;
   renderer.shadowMap.enabled = true;
+  // Directional shadows are expensive on mobile. Scene changes explicitly
+  // request an update, so the same shadow map is reused between changes
+  // instead of being rendered again for every animation frame.
+  renderer.shadowMap.autoUpdate = false;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   viewport.appendChild(renderer.domElement);
@@ -2266,7 +2353,7 @@ async function setupThree() {
       three.post.uniforms.sunIntensity.value = sunPoint.z < 1 && skyState.sunVector.y > 0 ? (skyState.sunRaysIntensity || 0) : 0;
       three.post.uniforms.atmosphereGlare.value = sunPoint.z < 1 && skyState.sunVector.y > 0 ? skyState.glare : 0;
     }
-    if (three?.composer && dbg.shadersOn && shdReady) {
+    if (shouldUseComposer()) {
       three.composer.render();
     } else {
       renderer.render(scene, camera);
@@ -2284,11 +2371,11 @@ function clearMeshes(list) {
     if (mesh.geometry) mesh.geometry.dispose();
     if (Array.isArray(mesh.material)) {
       mesh.material.forEach((m) => {
-        if (m.map) m.map.dispose();
+        for (const texture of [m.map, m.normalMap, m.roughnessMap, m.metalnessMap]) texture?.dispose();
         m.dispose();
       });
     } else if (mesh.material) {
-      if (mesh.material.map) mesh.material.map.dispose();
+      for (const texture of [mesh.material.map, mesh.material.normalMap, mesh.material.roughnessMap, mesh.material.metalnessMap]) texture?.dispose();
       mesh.material.dispose();
     }
   }
@@ -2308,6 +2395,7 @@ function clearHighlight() {
 function clearWorld() {
   clearHighlight();
   clearMeshes(decalPlanes);
+  clearMeshes(terrainMeshes);
   decalPlaneById.clear();
   for (const mesh of partMeshes) {
     clearStudOverlay(mesh);
@@ -2321,6 +2409,8 @@ function clearWorld() {
   clearSceneLights();
   partByPath = new Map();
   occLastAt = 0;
+  shadowCoverageState = null;
+  shadowSceneDirty = true;
 }
 
 function drawEmpty() {
@@ -2815,14 +2905,26 @@ function updateShadowCoverage(now = 0, force = false) {
   const range = shadowRange(dbg.shadowRange);
   const forward = new THREE.Vector3(); camera.getWorldDirection(forward);
   const target = camera.position.clone().addScaledVector(forward, Math.min(range * 0.2, 30));
+  const moveThreshold = Math.max(2, range / 24);
+  const prior = shadowCoverageState;
+  const targetMoved = !prior || prior.target.distanceToSquared(target) >= moveThreshold * moveThreshold;
+  const sunChanged = !prior || prior.sun.angleTo(skyState.sunVector) > 0.002;
+  const rangeChanged = !prior || prior.range !== range;
+  const needsShadowUpdate = force || shadowSceneDirty || targetMoved || sunChanged || rangeChanged;
   const shadowCamera = three.dir.shadow.camera;
-  if (shadowCamera.right !== range) {
+  if (rangeChanged) {
     shadowCamera.left = -range; shadowCamera.right = range; shadowCamera.top = range; shadowCamera.bottom = -range;
     shadowCamera.near = 1; shadowCamera.far = Math.max(900, range * 7); shadowCamera.updateProjectionMatrix();
   }
-  three.dir.target.position.copy(target);
-  three.dir.position.copy(target).addScaledVector(skyState.sunVector, Math.max(180, range * 1.5));
-  three.dir.target.updateMatrixWorld(true); three.dir.updateMatrixWorld(true);
+  if (needsShadowUpdate) {
+    three.dir.target.position.copy(target);
+    three.dir.position.copy(target).addScaledVector(skyState.sunVector, Math.max(180, range * 1.5));
+    three.dir.target.updateMatrixWorld(true); three.dir.updateMatrixWorld(true);
+    three.dir.shadow.needsUpdate = true;
+    if (three.renderer.shadowMap) three.renderer.shadowMap.needsUpdate = true;
+    shadowCoverageState = { target: target.clone(), sun: skyState.sunVector.clone(), range };
+    shadowSceneDirty = false;
+  }
   for (const mesh of partMeshes) {
     if (!mesh?.userData?.part || !mesh.position) continue;
     const cast = partCastsNearby(mesh.userData.part, mesh.position, camera.position, dbg.shadowRange);
@@ -2938,6 +3040,12 @@ function syncLight(snapshot) {
     uniforms.blurSize.value = enabled.filter(e => e.className === 'BlurEffect').reduce((max,e) => Math.max(max,toNum(e.size,0)),0) * 0.5;
     uniforms.sunSpread.value = toNum(enabled.find(e=>e.className==='SunRaysEffect')?.spread,0.5);
     skyState.sunRaysIntensity = enabled.filter(e=>e.className==='SunRaysEffect').reduce((sum,e)=>sum+toNum(e.intensity,0),0);
+    three.post.enabled = Boolean(
+      corrections.length ||
+      uniforms.blurSize.value > 0 ||
+      skyState.sunRaysIntensity > 0 ||
+      skyState.glare > 0,
+    );
     uniforms.resolution.value.set(three.renderer.domElement.width,three.renderer.domElement.height);
     three.renderer.domElement.style.filter = '';
     const dof = enabled.find(e => e.className === 'DepthOfFieldEffect');
@@ -3291,6 +3399,8 @@ function drawSnap(snapshot, opt = {}) {
       applyMatTex(mesh, part, version);
     });
   }
+
+  addTerrain(snapshot, version);
 
   addCharLabels(snapshot);
   addFxPlaceholders(snapshot);
@@ -4071,6 +4181,7 @@ function repSnapRaw() {
     snapshotName: raw.replayName || "Replay",
     serverName: raw.replayName || "Replay",
     lighting: repDat?.lighting || raw?.base?.lighting || raw?.lighting || {},
+    terrain: raw?.base?.terrain || raw?.terrain || null,
     parts: repMap ? Array.from(repMap.values()) : [],
     decals: repDat ? Array.from(repDat.decalMap.values()) : [],
     explorer: { services: [], nodeCount: 0, maxDepth: 0 },
@@ -4120,6 +4231,7 @@ function repSet(mesh, p, alpha = 1, src = null) {
   const pz = alpha >= 1 ? p?.position?.z : repLerp(q?.position?.z, p?.position?.z, alpha);
   const tr = alpha >= 1 ? p?.transparency : repLerp(q?.transparency, p?.transparency, alpha);
   mesh.position.set(Number(px || 0), Number(py || 0), Number(pz || 0));
+  shadowSceneDirty = true;
   replayPoseEuler ||= new THREE.Euler(0, 0, 0, "YXZ");
   replayPoseFrom ||= new THREE.Quaternion();
   replayPoseTo ||= new THREE.Quaternion();
@@ -4610,6 +4722,8 @@ function onResize() {
   if (!three) return;
   const w = Math.max(320, viewport.clientWidth);
   const h = Math.max(220, viewport.clientHeight);
+  const ratio = scenePixelRatio(w);
+  if (three.renderer.getPixelRatio() !== ratio) three.renderer.setPixelRatio(ratio);
   three.renderer.setSize(w, h);
   if (three.composer?.setSize) three.composer.setSize(w, h);
   if (three.bloom?.setSize) three.bloom.setSize(w, h);
@@ -4673,11 +4787,33 @@ async function copyShareUrl() {
 
 async function openShared() {
   const url = new URL(window.location.href);
-  const id = String(globalThis.__REPLAY_OFFLINE__?.id || url.searchParams.get("id") || "").trim();
-  const mode = String(globalThis.__REPLAY_OFFLINE__?.mode || url.searchParams.get("mode") || "").trim().toLowerCase();
+  const offline = globalThis.__REPLAY_OFFLINE__;
+  const id = String(offline?.id || url.searchParams.get("id") || "").trim();
+  const mode = String(offline?.mode || url.searchParams.get("mode") || "").trim().toLowerCase();
   if (!id) return false;
   curMode = mode === "rep" ? "rep" : "snap";
   if (modeSelect) modeSelect.value = curMode;
+  if (offline?.capture) {
+    // A single-file export is self-contained. Do not show the library or
+    // require a server-list fetch before playing its embedded capture.
+    const row = offlineCaptureRow(offline);
+    if (curMode === "rep") replays = [row];
+    else servers = [row];
+    serverSelect.replaceChildren();
+    const option = document.createElement("option");
+    option.value = id;
+    option.textContent = String(
+      curMode === "rep"
+        ? row.replayName || id
+        : row.snapshotName || row.serverName || id,
+    );
+    serverSelect.appendChild(option);
+    serverSelect.value = id;
+    applyModeUi();
+    showViewer();
+    await loadCur();
+    return true;
+  }
   await loadList();
   serverSelect.value = id;
   showViewer();

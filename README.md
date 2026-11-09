@@ -36,9 +36,11 @@ Replays and snapshots are created under `web/data/`. The repository includes `cl
 
 ## Share and explore
 
-Open a capture and choose **Menu → Share** to copy a server link or download a single offline HTML file with the viewer, capture, meshes, and textures. If assets cannot be included, review the list and choose **Export anyway** or close to cancel. The missing-asset list stays in the exported file. Open the HTML in a browser with WebGL and import-map support; no Replay Mod server is required for playback.
+Open a capture and choose **Menu → Share** to copy a server link or download a single offline HTML file with the viewer, capture, meshes, and textures. It opens its embedded replay or snapshot directly in the viewer, without first showing the library. If assets cannot be included, review the list and choose **Export anyway** or close to cancel. The missing-asset list stays in the exported file. Open the HTML in a browser with WebGL and import-map support; no Replay Mod server is required for playback.
 
 Replay cards show the configured TPS in a colored corner badge. The initial camera appears near a visible player, falling back to a scene part. New captures include player health for this choice; older captures use visible loaded players. The recorder samples players' limbs together each tick, and playback uses Roblox's YXZ rotation order with quaternion interpolation. This is not yet a full Motor6D rig reconstruction.
+
+New captures also include a bounded, coarse terrain window around the local player so terrain rocks and hills can appear in the viewer. Record again to add terrain to older captures; smooth terrain, water, and terrain changes are approximations or unsupported.
 
 The terminal offers to create and unlock the encrypted `auth.lzk8` file for Roblox session access. See [setup](docs/setup.md#roblox-session-credential) and [operations](docs/operacao.md) for credentials, diagnostic logs, and offline export limitations.
 
