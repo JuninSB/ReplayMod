@@ -179,13 +179,13 @@ function authorized(req: IncomingMessage, body: Json): boolean {
     return false;
   return true;
 }
-async function readJson(req: IncomingMessage): Promise<Json> {
+async function readJson(req: IncomingMessage, limit = maxBody): Promise<Json> {
   const pieces: Buffer[] = [];
   let bytes = 0;
   for await (const part of req) {
     const b = Buffer.from(part);
     bytes += b.length;
-    if (bytes > maxBody) throw new Error("payload too large");
+    if (bytes > limit) throw new Error("payload too large");
     pieces.push(b);
   }
   const value: unknown = JSON.parse(Buffer.concat(pieces).toString("utf8"));
@@ -660,6 +660,46 @@ async function handle(
   res: ServerResponse,
 ): Promise<void> {
   const url = new URL(req.url || "/", "http://localhost");
+  if (req.method === "POST" && url.pathname === "/api/diagnostics/viewer") {
+    if (!loopback(req)) return fail(res, "localhost only", 403);
+    if (req.headers["sec-fetch-site"] === "cross-site")
+      return fail(res, "cross-site request blocked", 403);
+    const origin = req.headers.origin;
+    if (origin) {
+      try {
+        const parsed = new URL(origin);
+        if (!isLoopbackBase(origin) || parsed.host !== req.headers.host)
+          return fail(res, "origin blocked", 403);
+      } catch {
+        return fail(res, "origin blocked", 403);
+      }
+    }
+    if (
+      !String(req.headers["content-type"] || "").startsWith("application/json")
+    )
+      return fail(res, "application/json required", 415);
+    const body = await readJson(req, 64 * 1024);
+    if (!Array.isArray(body.events) || body.events.length > 50)
+      return fail(res, "invalid diagnostics", 400);
+    const events = body.events.filter(obj).map((event) => ({
+      time: String(event.time || "").slice(0, 32),
+      kind: String(event.kind || "").slice(0, 32),
+      detail: String(event.detail || "").slice(0, 300),
+    }));
+    const file =
+      process.env.SERVER_WEBVIEW_VIEWER_LOG_PATH ||
+      path.join(root, "replaymod-viewer.log");
+    const size = await fs
+      .stat(file)
+      .then((s) => s.size)
+      .catch(() => 0);
+    if (size > 5 * 1024 * 1024) return fail(res, "diagnostic log full", 507);
+    await fs.appendFile(
+      file,
+      events.map((event) => JSON.stringify(event)).join("\n") + "\n",
+    );
+    return json(res, { ok: true, accepted: events.length });
+  }
   const p = url.pathname,
     method = req.method || "GET";
   if (method === "GET" && p === "/health")

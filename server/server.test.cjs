@@ -217,6 +217,7 @@ test("Node server accepts chunked replays and enforces local authentication", as
       ...process.env,
       SERVER_WEBVIEW_DATA_DIR: dataDir,
       SERVER_WEBVIEW_LOG_PATH: path.join(dataDir, "server.log"),
+      SERVER_WEBVIEW_VIEWER_LOG_PATH: path.join(dataDir, "viewer.log"),
       SERVER_WEBVIEW_CONTENT_DIR: contentDir,
       SERVER_WEBVIEW_CLIENT_ASSETS_DIR: clientAssetsDir,
       SERVER_WEBVIEW_ASSET_DELIVERY_DIR: assetDeliveryDir,
@@ -318,6 +319,20 @@ test("Node server accepts chunked replays and enforces local authentication", as
     }
     assert.match(diagnostics, /\/api\/auth\/local status=200/);
     assert.ok(!diagnostics.includes(uploadToken));
+    const viewerResponse = await fetch(base + "/api/diagnostics/viewer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: base },
+      body: JSON.stringify({ events: [{ time: "now", kind: "action", detail: "button=replayPlayBtn", secret: "do-not-save" }] }),
+    });
+    assert.equal(viewerResponse.status, 200);
+    const viewerLog = await fs.readFile(path.join(dataDir, "viewer.log"), "utf8");
+    assert.match(viewerLog, /button=replayPlayBtn/);
+    assert.doesNotMatch(viewerLog, /do-not-save/);
+    const crossSiteLog = await fetch(base + "/api/diagnostics/viewer", {
+      method: "POST", headers: { "Content-Type": "application/json", Origin: "https://example.com", "Sec-Fetch-Site": "cross-site" },
+      body: JSON.stringify({ events: [] }),
+    });
+    assert.equal(crossSiteLog.status, 403);
     const replay = {
       serverId: "test-server",
       replayId: "test-replay",

@@ -136,6 +136,48 @@ let thMuteSv = "";
 let thTimer = null;
 const clientLogs = [];
 const MAX_CLIENT_LOGS = 1200;
+const viewerDiagnostics = [];
+const viewerDiagnosticFailures = new Set();
+const diagnosticSession = Math.random().toString(36).slice(2, 10);
+let diagnosticLastFlush = 0;
+let diagnosticLastSample = 0;
+let diagnosticSending = false;
+let diagnosticFrameCount = 0;
+function recordViewerDiagnostic(kind, detail = "") {
+  if (window.__REPLAY_OFFLINE__) return;
+  viewerDiagnostics.push({ time: new Date().toISOString(), kind, detail: `${diagnosticSession} ${String(detail).slice(0, 260)}` });
+  if (viewerDiagnostics.length > 200) viewerDiagnostics.shift();
+}
+function flushViewerDiagnostics(now) {
+  if (diagnosticSending || !viewerDiagnostics.length || now - diagnosticLastFlush < 10000 || window.__REPLAY_OFFLINE__) return;
+  diagnosticLastFlush = now;
+  const events = viewerDiagnostics.splice(0, 50);
+  diagnosticSending = true;
+  fetch('/api/diagnostics/viewer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ events }) })
+    .then(response => { if (!response.ok) throw new Error('diagnostic upload rejected'); })
+    .catch(() => { viewerDiagnostics.unshift(...events); if (viewerDiagnostics.length > 200) viewerDiagnostics.length = 200; })
+    .finally(() => { diagnosticSending = false; });
+}
+function sampleViewerDiagnostics(now) {
+  if (!three) return;
+  diagnosticFrameCount += 1;
+  if (now - diagnosticLastSample < 10000) return;
+  const measuredFps = diagnosticLastSample ? diagnosticFrameCount * 1000 / (now - diagnosticLastSample) : 0;
+  diagnosticFrameCount = 0;
+  diagnosticLastSample = now;
+  const stats = three.renderer.info;
+  const assets = assetLoads.summary();
+  recordViewerDiagnostic('performance', `fps=${measuredFps.toFixed(1)} calls=${stats.render.calls} triangles=${stats.render.triangles} geometries=${stats.memory.geometries} textures=${stats.memory.textures} parts=${partMeshes.length} meshes=${assets.mesh.ready}/${assets.mesh.total} texturesLoaded=${assets.texture.ready}/${assets.texture.total} failed=${assets.failures.length} pixelRatio=${three.renderer.getPixelRatio()} shadowRange=${dbg.shadowRange} culling=${dbg.cullingOn} playing=${repRun}`);
+  for (const failure of assets.failures) {
+    const key = String(failure.key).match(/(?:rbxassetid:(?:\/\/|%2f%2f)|[?&]id=)(\d+)/i)?.[1] || 'unknown';
+    const marker = `${failure.kind}:${key}`;
+    if (!viewerDiagnosticFailures.has(marker)) {
+      viewerDiagnosticFailures.add(marker);
+      const status = String(failure.error || '').match(/\b[45]\d\d\b/)?.[0] || 'unknown';
+      recordViewerDiagnostic('asset_failed', `${marker} status=${status}`);
+    }
+  }
+}
 const pressedKeys = new Set();
 let studioFlyActive = false;
 let studioMoveSpeed = 24;
@@ -866,6 +908,8 @@ function wireClientLoggers() {
   });
 
   window.addEventListener("error", (event) => {
+    recordViewerDiagnostic('error', `source=${String(event.filename || '').split('/').pop()?.split('?')[0]} line=${Number(event.lineno) || 0} column=${Number(event.colno) || 0}`);
+    flushViewerDiagnostics(performance.now() + 10000);
     addClientLog("error", "window.error", {
       message: event.message,
       filename: event.filename,
@@ -882,7 +926,26 @@ function wireClientLoggers() {
   });
 
   window.addEventListener("unhandledrejection", (event) => {
+    recordViewerDiagnostic('error', 'unhandled_promise_rejection');
+    flushViewerDiagnostics(performance.now() + 10000);
     addClientLog("error", "window.unhandledrejection", { reason: event.reason });
+  });
+  document.addEventListener('click', event => {
+    const button = event.target?.closest?.('button');
+    if (button?.id) recordViewerDiagnostic('action', `button=${button.id}`);
+  });
+  document.addEventListener('change', event => {
+    const element = event.target;
+    if (!element?.id) return;
+    const allowed = new Set(['shadowRange', 'sceneBrightness', 'setFov', 'setCamSens', 'modeSelect', 'replaySeek', 'dbgShaders', 'dbgSmoothLighting', 'dbgSmoothShadows', 'dbgFps', 'dbgTextures', 'dbgFog', 'dbgCulling', 'dbgPlayerLabels', 'dbgMeshBoxes', 'dbgFxPlaceholders', 'dbgWireframe', 'replaySpeed']);
+    if (allowed.has(element.id)) recordViewerDiagnostic('setting', `${element.id}=${element.type === 'checkbox' ? Boolean(element.checked) : String(element.value).slice(0, 20)}`);
+  });
+  recordViewerDiagnostic('session', `started viewport=${window.innerWidth}x${window.innerHeight} pixelRatio=${window.devicePixelRatio || 1}`);
+  flushViewerDiagnostics(performance.now() + 10000);
+  window.addEventListener('pagehide', () => {
+    if (window.__REPLAY_OFFLINE__ || !viewerDiagnostics.length || !navigator.sendBeacon) return;
+    const events = viewerDiagnostics.slice(0, 50);
+    navigator.sendBeacon('/api/diagnostics/viewer', new Blob([JSON.stringify({ events })], { type: 'application/json' }));
   });
 }
 
@@ -2183,6 +2246,11 @@ async function setupThree() {
     antialias: bootW >= 700,
     preserveDrawingBuffer: true,
   });
+  renderer.domElement.addEventListener('webglcontextlost', () => {
+    recordViewerDiagnostic('error', 'webgl_context_lost');
+    flushViewerDiagnostics(performance.now() + 10000);
+  });
+  renderer.domElement.addEventListener('webglcontextrestored', () => recordViewerDiagnostic('renderer', 'webgl_context_restored'));
   renderer.setPixelRatio(scenePixelRatio(bootW));
   renderer.setSize(bootW, bootH);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -2343,6 +2411,8 @@ async function setupThree() {
     updateFly(delta);
     updateOcc(now);
     updateFpsOverlay(now);
+    sampleViewerDiagnostics(now);
+    flushViewerDiagnostics(now);
     updateShadowCoverage(now);
     updateNameplates();
     controls.update();
