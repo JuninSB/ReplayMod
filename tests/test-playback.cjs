@@ -6,6 +6,17 @@ const { readFileSync } = require("node:fs");
 const { spawnSync } = require("node:child_process");
 const vm = require("node:vm");
 
+test("shadow range limits distant shadows without overriding disabled casters", async () => {
+  const {partCastsNearby} = await import("../web/static/shadow-range.mjs");
+  const camera = {x:0,y:0,z:0};
+  const part = {size:{x:2,y:2,z:2},castShadow:true};
+  assert.equal(partCastsNearby(part,{x:40,y:0,z:0},camera,'near'),true);
+  assert.equal(partCastsNearby(part,{x:200,y:0,z:0},camera,'medium'),false);
+  assert.equal(partCastsNearby(part,{x:200,y:0,z:0},camera,'far'),true);
+  assert.equal(partCastsNearby({...part,castShadow:false},{x:1,y:0,z:0},camera,'far'),false);
+  assert.equal(partCastsNearby({...part,transparency:1},{x:1,y:0,z:0},camera,'far'),false);
+});
+
 test("asset loading retries twice, shares successes and retries only failed jobs", async () => {
   const { AssetLoads } = await import("../web/static/asset-loads.mjs");
   const loads = new AssetLoads();

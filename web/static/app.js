@@ -1,3 +1,4 @@
+import { shadowRange, partCastsNearby } from "./shadow-range.mjs";
 import { postEffectShader } from "./post-effects.mjs";
 import { AssetLoads } from "./asset-loads.mjs";
 import { chooseSpawnTarget } from "./camera-spawn.mjs";
@@ -155,6 +156,7 @@ const MESH_CHUNK_ON = false;
 const MESH_CHUNK_TRI_THRESHOLD = 2200;
 const MESH_CHUNK_MAX = 24;
 let occLastAt = 0;
+let shadowCoverageAt = 0;
 let occProj = null;
 let occFrustum = null;
 let occRay = null;
@@ -165,6 +167,7 @@ let occBox = null;
 let occNdcTmp = null;
 let renderStatusEl = null;
 let renderStage = "";
+let assetProgressDismissed = false;
 const assetLoads = new AssetLoads(() => renderAssetProgress(), 6, job => {
   if (job.kind !== 'texture') return;
   const source = job.key.slice('texture:'.length);
@@ -186,6 +189,8 @@ const dbg = {
   shadersOn: true,
   smoothShadows: true,
   smoothLighting: true,
+  sceneBrightness: 1,
+  shadowRange: "medium",
   showFps: false,
   texturesOn: true,
   fogOn: true,
@@ -266,6 +271,8 @@ function ensureHUD() {
   panel.className = "asset-progress";
   panel.hidden = true;
   const title = document.createElement("div"); title.id = "assetStage"; title.setAttribute("role", "status");
+  const close = document.createElement("button"); close.id = "assetDismiss"; close.type = "button"; close.textContent = "×"; close.setAttribute("aria-label", "Close loading status");
+  close.addEventListener("click", () => { assetProgressDismissed = true; renderAssetProgress(); });
   const counts = document.createElement("div"); counts.id = "assetCounts";
   const bar = document.createElement("progress"); bar.id = "assetProgress"; bar.max = 1; bar.value = 0; bar.setAttribute("aria-label", "Scene asset loading");
   const retry = document.createElement("button"); retry.id = "assetRetry"; retry.type = "button"; retry.textContent = "Retry failed assets";
@@ -273,7 +280,7 @@ function ensureHUD() {
   const details = document.createElement("details"); details.id = "assetFailureDetails";
   const summary = document.createElement("summary"); summary.textContent = "Failed assets";
   const list = document.createElement("ul"); list.id = "assetFailures"; details.append(summary, list);
-  panel.append(title, counts, bar, retry, details); viewport.appendChild(panel); renderStatusEl = panel;
+  panel.append(close, title, counts, bar, retry, details); viewport.appendChild(panel); renderStatusEl = panel;
 }
 function setRenderStatus(text) {
   renderStage = String(text || "").trim();
@@ -284,7 +291,10 @@ function renderAssetProgress() {
   if (!renderStatusEl) return;
   const {mesh, texture, pending, failures} = assetLoads.summary();
   const total = mesh.total + texture.total, ready = mesh.ready + texture.ready;
-  renderStatusEl.hidden = !renderStage && !pending && !failures.length;
+  const hasStatus = Boolean(renderStage || pending || failures.length);
+  renderStatusEl.hidden = assetProgressDismissed || !hasStatus;
+  const openStatus = document.getElementById("assetStatusBtn");
+  if (openStatus) openStatus.hidden = !hasStatus;
   document.getElementById("assetStage").textContent = renderStage || (pending ? "Loading scene assets…" : `${failures.length} assets failed to load`);
   document.getElementById("assetCounts").textContent = `Meshes ${mesh.ready}/${mesh.total} · Textures ${texture.ready}/${texture.total}`;
   document.getElementById("assetProgress").value = total ? ready / total : 0;
@@ -878,7 +888,9 @@ function materialProfile(rawMaterial) {
 }
 
 function localMaterialPath(rawMaterial) {
-  return null;
+  const name = normMat(rawMaterial);
+  if (!name || ["plastic", "smoothplastic", "neon"].includes(name.toLowerCase())) return null;
+  return materialMapUrl(name, "color");
 }
 
 function materialMapUrl(rawMaterial, mapType) {
@@ -1553,7 +1565,7 @@ function applyMatTex(mesh, part, version) {
   clearClothingOverlays(mesh);
   applyClothingOverlays(mesh, part, currentAppearance);
   const localMatPath = localMaterialPath(part?.material);
-  mesh.userData.matPath = localMatPath || "Roblox asset fallback";
+  mesh.userData.matPath = localMatPath || "Solid material color";
   const baseMat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
   const profile = materialProfile(part?.material);
   const texturePolicy = meshTexturePolicy(part);
@@ -1567,6 +1579,13 @@ function applyMatTex(mesh, part, version) {
     }
     baseMat.userData.replayTexturePolicy = texturePolicy;
     baseMat.color.set(hexColor(part?.color3 || "#d1d5db"));
+    if (baseMat.emissive) {
+      const neon = normMat(part?.material).toLowerCase() === "neon";
+      baseMat.emissive.set(neon ? hexColor(part?.color3 || "#ffffff") : "#000000");
+      baseMat.emissiveIntensity = neon ? 1 : 0;
+      baseMat.userData.baseEmissive = baseMat.emissive.clone();
+      baseMat.userData.baseEmissiveIntensity = baseMat.emissiveIntensity;
+    }
     baseMat.side = part?.doubleSided ? THREE.DoubleSide : THREE.FrontSide;
     if (texturePolicy) syncMeshTextureMaterial(baseMat);
     else {
@@ -1690,18 +1709,7 @@ function applyMatTex(mesh, part, version) {
   const applyFallback = () => {
     if (doneFallback || !currentAppearance()) return;
     doneFallback = true;
-    if (String(part?.meshId || "").trim()) return;
-    mesh.userData.matPath = "Roblox asset fallback";
-    loadTexSrc("rbxasset://textures/meshPartFallback.png", (fallbackTex) => {
-      if (!fallbackTex || !currentAppearance()) return;
-      fallbackTex.wrapS = THREE.RepeatWrapping;
-      fallbackTex.wrapT = THREE.RepeatWrapping;
-      if ("colorSpace" in fallbackTex) fallbackTex.colorSpace = THREE.SRGBColorSpace;
-      fallbackTex.anisotropy = three.renderer.capabilities.getMaxAnisotropy();
-      fallbackTex.needsUpdate = true;
-      if (!Array.isArray(mesh.material)) setMatMap(mesh.material, fallbackTex);
-      applyWireframeModeToMesh(mesh);
-    });
+    mesh.userData.matPath = "Solid material color";
   };
   if (pbrPromise) {
     pbrPromise.then((maps) => {
@@ -2201,6 +2209,9 @@ async function setupThree() {
   dir.shadow.camera.top = 240;
   dir.shadow.camera.bottom = -240;
   scene.add(dir);
+  // Keep the moving directional-light target in the scene graph so its
+  // world transform is current when the shadow camera follows the viewer.
+  scene.add(dir.target);
 
   const fill = new THREE.AmbientLight(0xffffff, 0.35);
   scene.add(fill);
@@ -2243,6 +2254,7 @@ async function setupThree() {
     updateFly(delta);
     updateOcc(now);
     updateFpsOverlay(now);
+    updateShadowCoverage(now);
     updateNameplates();
     controls.update();
     if (skyState) {
@@ -2287,8 +2299,9 @@ function clearHighlight() {
   if (!selectedMesh || !selectedMesh.material) return;
   const mat = selectedMesh.material;
   if ("emissive" in mat) {
-    mat.emissive.set("#000000");
-    mat.emissiveIntensity = 0;
+    if (mat.userData.baseEmissive) mat.emissive.copy(mat.userData.baseEmissive);
+    else mat.emissive.set("#000000");
+    mat.emissiveIntensity = mat.userData.baseEmissiveIntensity || 0;
   }
   selectedMesh = null;
 }
@@ -2795,6 +2808,29 @@ function syncRecordedSky(settings) {
   }));
 }
 
+function updateShadowCoverage(now = 0, force = false) {
+  if (!three?.dir || !three?.camera || !skyState || (!force && now - shadowCoverageAt < 400)) return;
+  shadowCoverageAt = now;
+  const camera = three.camera;
+  const range = shadowRange(dbg.shadowRange);
+  const forward = new THREE.Vector3(); camera.getWorldDirection(forward);
+  const target = camera.position.clone().addScaledVector(forward, Math.min(range * 0.2, 30));
+  const shadowCamera = three.dir.shadow.camera;
+  if (shadowCamera.right !== range) {
+    shadowCamera.left = -range; shadowCamera.right = range; shadowCamera.top = range; shadowCamera.bottom = -range;
+    shadowCamera.near = 1; shadowCamera.far = Math.max(900, range * 7); shadowCamera.updateProjectionMatrix();
+  }
+  three.dir.target.position.copy(target);
+  three.dir.position.copy(target).addScaledVector(skyState.sunVector, Math.max(180, range * 1.5));
+  three.dir.target.updateMatrixWorld(true); three.dir.updateMatrixWorld(true);
+  for (const mesh of partMeshes) {
+    if (!mesh?.userData?.part || !mesh.position) continue;
+    const cast = partCastsNearby(mesh.userData.part, mesh.position, camera.position, dbg.shadowRange);
+    mesh.castShadow = cast;
+    for (const chunk of mesh.userData.chunkMeshes || []) chunk.castShadow = cast;
+  }
+}
+
 function syncLight(snapshot) {
   if (!three) return;
   const lighting = snapshot.lighting || {};
@@ -2852,7 +2888,7 @@ function syncLight(snapshot) {
   if (three.renderer && dbg.shadersOn) {
     const grading = postEffects.find(effect => effect.className === 'ColorGradingEffect' && effect.enabled);
     three.renderer.toneMapping = String(grading?.tonemapperPreset || '').endsWith('.Retro') ? THREE.ReinhardToneMapping : THREE.ACESFilmicToneMapping;
-    three.renderer.toneMappingExposure = Math.pow(2, Math.max(-5, Math.min(5, exposureComp)));
+    three.renderer.toneMappingExposure = Math.pow(2, Math.max(-5, Math.min(5, exposureComp))) * dbg.sceneBrightness;
   }
 
   const ambientColor = new THREE.Color(ambient);
@@ -2873,7 +2909,7 @@ function syncLight(snapshot) {
   if (three.fill) {
     three.fill.color.copy(ambientColor);
     if (lighting.colorShiftBottom) three.fill.color.add(new THREE.Color(hexColor(lighting.colorShiftBottom)));
-    three.fill.intensity = 1;
+    three.fill.intensity = 1.8;
   }
   if (three.scene.userData.specularScale !== specularScale) {
     three.scene.userData.specularScale = specularScale;
@@ -2915,23 +2951,7 @@ function syncLight(snapshot) {
     }
   }
 
-  if (three.dir.shadow && three.controls?.target) {
-    const target = three.controls.target.clone();
-    const cam = three.dir.shadow.camera;
-    const shadowSpan = Math.max(120, Math.min(420, 140 + brightness * 40));
-    cam.left = -shadowSpan;
-    cam.right = shadowSpan;
-    cam.top = shadowSpan;
-    cam.bottom = -shadowSpan;
-    cam.near = 1;
-    cam.far = Math.max(900, shadowSpan * 7);
-    three.dir.target.position.copy(target);
-    three.dir.position.copy(target).addScaledVector(sunVector, Math.max(180, shadowSpan * 1.5));
-    three.dir.updateMatrixWorld(true);
-    three.scene.add(three.dir.target);
-    three.dir.target.updateMatrixWorld(true);
-    three.dir.shadow.camera.updateProjectionMatrix();
-  }
+  if (three.dir.shadow) updateShadowCoverage(performance.now(), true);
 
   const fogStart = toNum(lighting.fogStart, 120);
   const fogEnd = toNum(lighting.fogEnd, 650);
@@ -4442,6 +4462,7 @@ function repLoad(raw) {
 }
 
 async function loadReplay() {
+  assetProgressDismissed = false;
   const loadId = ++sceneLoad;
   displayedSceneKey = "";
   if (saveThumbnailBtn) saveThumbnailBtn.disabled = true;
@@ -4520,6 +4541,7 @@ async function loadCur() {
 }
 
 async function loadSnapshot() {
+  assetProgressDismissed = false;
   const loadId = ++sceneLoad;
   displayedSceneKey = "";
   if (saveThumbnailBtn) saveThumbnailBtn.disabled = true;
@@ -4806,6 +4828,15 @@ function wireDebugMenu() {
       apShMode();
     });
   }
+  document.getElementById("shadowRange")?.addEventListener("change", event => {
+    dbg.shadowRange = event.target.value;
+    updateShadowCoverage(performance.now(), true);
+  });
+  document.getElementById("sceneBrightness")?.addEventListener("input", event => {
+    dbg.sceneBrightness = Math.max(0.5, Math.min(3, Number(event.target.value) || 1));
+    document.getElementById("sceneBrightnessValue").textContent = `${dbg.sceneBrightness.toFixed(2)}×`;
+    if (latestSnapshot) syncLight(latestSnapshot);
+  });
   document.getElementById("dbgSmoothLighting")?.addEventListener("change", event => {
     dbg.smoothLighting = event.target.checked;
     for (const mesh of partMeshes) {
@@ -5154,6 +5185,18 @@ if (homeBtn) {
 document.getElementById("viewerMenuBtn")?.addEventListener("click", () => {
   setViewerMenuOpen(document.getElementById("viewerMenu").hidden);
 });
+function setUiHidden(hidden) {
+  if (hidden) { setViewerMenuOpen(false); setSidebarOpen(false); }
+  document.body.classList.toggle("is-ui-hidden", hidden);
+  document.getElementById("showUiBtn").hidden = !hidden;
+}
+document.getElementById("hideUiBtn")?.addEventListener("click", () => setUiHidden(true));
+document.getElementById("showUiBtn")?.addEventListener("click", () => setUiHidden(false));
+document.getElementById("assetStatusBtn")?.addEventListener("click", () => {
+  assetProgressDismissed = false;
+  setViewerMenuOpen(false);
+  renderAssetProgress();
+});
 document.addEventListener("click", event => {
   const menu = document.getElementById("viewerMenu");
   if (menu && !menu.hidden && !menu.contains(event.target) && !document.getElementById("viewerMenuBtn")?.contains(event.target)) setViewerMenuOpen(false);
@@ -5164,6 +5207,7 @@ document.getElementById("mobileToolsBtn")?.addEventListener("click", () => {
 });
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
+    if (document.body.classList.contains("is-ui-hidden")) setUiHidden(false);
     setMobileToolsOpen(false);
     setViewerMenuOpen(false);
     setSidebarOpen(false);

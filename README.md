@@ -42,7 +42,7 @@ Replay cards show the configured TPS in a colored corner badge. The initial came
 
 The terminal offers to create and unlock the encrypted `auth.lzk8` file for Roblox session access. See [setup](docs/setup.md#roblox-session-credential) and [operations](docs/operacao.md) for credentials, diagnostic logs, and offline export limitations.
 
-The viewer starts with its menu collapsed. Use **Menu → Explorer** to inspect objects and **Menu → Save scene thumbnail** to capture a thumbnail. Loading shows mesh/texture progress, retries failed assets twice, and offers **Retry failed assets** without reloading successful assets. Offline export makes three attempts before listing failures. R6 SpecialMesh heads and smaller text-only nameplates are supported. See the [renderer compatibility guide](docs/rendering.md) for lighting properties, post effects, and the differences from Roblox's engine.
+The viewer starts with its menu collapsed. Use **Menu → Rendering** to adjust scene brightness and shadow range. Use **Menu → Hide UI** to hide controls and **Show UI** to restore them. Dismiss the loading status with × and reopen it from **Menu → Loading status**. Use **Menu → Explorer** to inspect objects and **Menu → Save scene thumbnail** to capture a thumbnail. Loading shows mesh/texture progress, retries failed assets twice, and offers **Retry failed assets** without reloading successful assets. Offline export makes three attempts before listing failures. R6 SpecialMesh heads and smaller text-only nameplates are supported. See the [renderer compatibility guide](docs/rendering.md) for lighting properties, post effects, and the differences from Roblox's engine.
 
 ## Develop and verify
 

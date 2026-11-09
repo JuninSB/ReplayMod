@@ -4,10 +4,10 @@ The viewer uses Three.js, so the renderer is a reconstruction rather than the Ro
 
 | Recorded property | Viewer mapping |
 | --- | --- |
-| Ambient, OutdoorAmbient, ColorShift_Top, ColorShift_Bottom | Ambient fill, hemispheric sky contribution, directional tint; sheltered-area voxel lighting is not reproduced exactly |
+| Ambient, OutdoorAmbient, ColorShift_Top, ColorShift_Bottom | Calibrated ambient fill, hemispheric sky contribution, directional tint; sheltered-area voxel lighting is not reproduced exactly |
 | Brightness, ExposureCompensation | Directional intensity and exposure of 2 to the recorded compensation, before tonemapping |
 | ClockTime, TimeOfDay, GeographicLatitude, GetSunDirection | Captured sun direction; clock-based fallback when direction is absent |
-| GlobalShadows, ShadowSoftness | Directional shadow enablement and PCF filter radius, with a device-sized shadow map |
+| GlobalShadows, ShadowSoftness | Directional shadow enablement and PCF filter radius, with a device-sized shadow map and adjustable Near/Medium/Far shadow range. These distances are approximate and are not Roblox quality presets |
 | LightingStyle, legacy Technology | Soft/Realistic intensity interpretation; proprietary voxel/Future lighting is not replicated |
 | EnvironmentDiffuseScale, EnvironmentSpecularScale | Environment diffuse contribution and material environment intensity; skybox-derived PMREM reflections |
 | PrioritizeLightingQuality, ExtendLightRangeTo120 | Preserved metadata; the browser keeps its own resource budgets and uses recorded light ranges |
@@ -31,8 +31,10 @@ SpecialMesh MeshType is recorded independently from MeshId. A built-in R6 Head i
 
 ## Loading and retries
 
-The viewer deduplicates asset requests and keeps successful results while rebuilding scene objects. Each failed asset is tried twice automatically. The progress panel shows mesh and texture counts and a failed-asset list; Retry requests only failures. Optional missing material maps use existing material fallbacks. Offline export tries each asset three times before presenting the missing list and Export anyway.
+The viewer deduplicates asset requests and keeps successful results while rebuilding scene objects. Each failed asset is tried twice automatically. The progress panel shows mesh and texture counts and a failed-asset list; Retry requests only failures. Close dismisses the panel for the current capture, and Menu → Loading status reopens it. Optional missing material maps use existing material fallbacks. Offline export tries each asset three times before presenting the missing list and Export anyway.
 
 ## UI
 
 Menu is collapsed on entry. Explorer, thumbnail capture, Rendering, Camera, Library and Share are inside it. FPS has its own position below the header. The scene movement hint is removed. All visible controls are in English.
+
+Solid-color parts keep their captured color when no material map is available; Neon uses emissive color. Menu → Hide UI hides the controls; Show UI restores them. Rendering → Scene brightness adjusts the viewer exposure relative to the capture. Interactive controls prevent touch text selection while diagnostic text stays selectable.

@@ -74,6 +74,8 @@
         >
           Save scene thumbnail
         </button>
+        <button id="assetStatusBtn" type="button" hidden>Loading status</button>
+        <button id="hideUiBtn" type="button">Hide UI</button>
         <div id="toolbarExtras" class="toolbar-extras">
           <div class="debug-wrap">
             <button
@@ -85,6 +87,19 @@
               Rendering
             </button>
             <div id="debugMenu" class="debug-menu" hidden>
+            <label class="debug-item debug-range">
+              <span>Scene brightness</span>
+              <input id="sceneBrightness" type="range" min="0.5" max="3" step="0.05" value="1" />
+              <span id="sceneBrightnessValue">1.00×</span>
+            </label>
+            <label class="debug-item debug-range">
+              <span>Shadow range</span>
+              <select id="shadowRange" aria-label="Shadow range">
+                <option value="near">Near</option>
+                <option value="medium" selected>Medium</option>
+                <option value="far">Far</option>
+              </select>
+            </label>
               <label class="debug-item"
                 ><input id="dbgShaders" type="checkbox" checked /> Enable
                 shaders</label
@@ -179,6 +194,7 @@
       </div>
       <button id="refreshBtn" class="refresh-btn" type="button">Refresh</button>
     </header>
+    <button id="showUiBtn" type="button" hidden>Show UI</button>
 
     <dialog id="shareDialog" class="share-dialog">
       <h2>Share capture</h2>
