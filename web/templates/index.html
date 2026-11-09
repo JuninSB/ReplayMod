@@ -28,142 +28,156 @@
       </div>
       <div id="viewerContext" class="viewer-context">Library</div>
       <button
-        id="sidebarToggleBtn"
-        class="refresh-btn sidebar-toggle-btn"
+        id="viewerMenuBtn"
         type="button"
         aria-expanded="false"
-        aria-controls="viewerSidebar"
+        aria-controls="viewerMenu"
       >
-        Explorer
+        Menu
       </button>
-      <button
-        id="mobileToolsBtn"
-        class="mobile-tools-btn"
-        type="button"
-        aria-expanded="false"
-        aria-controls="toolbarExtras"
-      >
-        Tools
-      </button>
-      <label class="server-select-wrap" for="serverSelect">
-        <span>Session</span>
-        <select id="serverSelect"></select>
-      </label>
-      <label class="server-select-wrap" for="modeSelect">
-        <span>Library</span>
-        <select id="modeSelect" aria-label="Choose snapshots or replays">
-          <option value="snap">Snapshots</option>
-          <option value="rep">Replays</option>
-        </select>
-      </label>
-      <button id="homeBtn" class="refresh-btn" type="button">Library</button>
-      <button id="refreshBtn" class="refresh-btn" type="button">
-        Refresh
-      </button>
-      <div id="toolbarExtras" class="toolbar-extras">
-        <div class="debug-wrap">
-          <button
-            id="debugBtn"
-            class="refresh-btn"
-            type="button"
-            aria-expanded="false"
-          >
-            Rendering
-          </button>
-          <div id="debugMenu" class="debug-menu" hidden>
-            <label class="debug-item"
-              ><input id="dbgShaders" type="checkbox" checked /> Enable
-              shaders</label
+      <div id="viewerMenu" class="viewer-menu" hidden>
+        <button
+          id="sidebarToggleBtn"
+          class="refresh-btn sidebar-toggle-btn"
+          type="button"
+          aria-expanded="false"
+          aria-controls="viewerSidebar"
+        >
+          Explorer
+        </button>
+        <button
+          id="mobileToolsBtn"
+          class="mobile-tools-btn"
+          type="button"
+          aria-expanded="false"
+          aria-controls="toolbarExtras"
+        >
+          Tools
+        </button>
+        <label class="server-select-wrap" for="serverSelect">
+          <span>Session</span>
+          <select id="serverSelect"></select>
+        </label>
+        <label class="server-select-wrap" for="modeSelect">
+          <span>Library</span>
+          <select id="modeSelect" aria-label="Choose snapshots or replays">
+            <option value="snap">Snapshots</option>
+            <option value="rep">Replays</option>
+          </select>
+        </label>
+        <button id="homeBtn" class="refresh-btn" type="button">Library</button>
+        <button
+          id="saveThumbnailBtn"
+          class="download-btn"
+          type="button"
+          disabled
+        >
+          Save scene thumbnail
+        </button>
+        <div id="toolbarExtras" class="toolbar-extras">
+          <div class="debug-wrap">
+            <button
+              id="debugBtn"
+              class="refresh-btn"
+              type="button"
+              aria-expanded="false"
             >
-            <label class="debug-item"
-              ><input id="dbgSmoothShadows" type="checkbox" checked /> Soft
-              shadows</label
-            >
-            <label class="debug-item"
-              ><input id="dbgFps" type="checkbox" /> Show FPS</label
-            >
-            <label class="debug-item"
-              ><input id="dbgTextures" type="checkbox" checked /> Enable
-              textures</label
-            >
-            <label class="debug-item"
-              ><input id="dbgFog" type="checkbox" checked /> Fog</label
-            >
-            <label class="debug-item"
-              ><input id="dbgCulling" type="checkbox" checked /> Object
-              occlusion</label
-            >
-            <label class="debug-item"
-              ><input id="dbgPlayerLabels" type="checkbox" checked /> Player
-              names</label
-            >
-            <label class="debug-item"
-              ><input id="dbgMeshBoxes" type="checkbox" checked /> Load
-              meshes</label
-            >
-            <label class="debug-item"
-              ><input id="dbgTexPathLabels" type="checkbox" /> Texture
-              paths</label
-            >
-            <label class="debug-item"
-              ><input id="dbgFxPlaceholders" type="checkbox" checked />
-              Approximate post effects</label
-            >
-            <label class="debug-item"
-              ><input id="dbgControls" type="checkbox" checked /> Show
-              controls help</label
-            >
-            <label class="debug-item"
-              ><input id="dbgWireframe" type="checkbox" /> Modo wireframe</label
-            >
-          </div>
-        </div>
-        <div class="settings-wrap">
-          <button
-            id="settingsBtn"
-            class="refresh-btn"
-            type="button"
-            aria-expanded="false"
-          >
-            Camera
-          </button>
-          <div id="settingsMenu" class="debug-menu settings-menu" hidden>
-            <label class="debug-item debug-range">
-              <span>FOV</span>
-              <input
-                id="setFov"
-                type="range"
-                min="35"
-                max="110"
-                step="1"
-                value="55"
-              />
-              <span id="setFovValue">55</span>
-            </label>
-            <label class="debug-item debug-range">
-              <span>Sensitivity</span>
-              <input
-                id="setCamSens"
-                type="range"
-                min="20"
-                max="300"
-                step="1"
-                value="100"
-              />
-              <span id="setCamSensValue">1.00x</span>
-            </label>
-            <button id="setLookBtn" class="refresh-btn" type="button">
-              Look: right mouse button
+              Rendering
             </button>
+            <div id="debugMenu" class="debug-menu" hidden>
+              <label class="debug-item"
+                ><input id="dbgShaders" type="checkbox" checked /> Enable
+                shaders</label
+              >
+              <label class="debug-item"
+                ><input id="dbgSmoothLighting" type="checkbox" checked /> Smooth
+                lighting</label
+              >
+              <label class="debug-item"
+                ><input id="dbgSmoothShadows" type="checkbox" checked /> Soft
+                shadows</label
+              >
+              <label class="debug-item"
+                ><input id="dbgFps" type="checkbox" /> Show FPS</label
+              >
+              <label class="debug-item"
+                ><input id="dbgTextures" type="checkbox" checked /> Enable
+                textures</label
+              >
+              <label class="debug-item"
+                ><input id="dbgFog" type="checkbox" checked /> Fog</label
+              >
+              <label class="debug-item"
+                ><input id="dbgCulling" type="checkbox" checked /> Object
+                occlusion</label
+              >
+              <label class="debug-item"
+                ><input id="dbgPlayerLabels" type="checkbox" checked /> Player
+                names</label
+              >
+              <label class="debug-item"
+                ><input id="dbgMeshBoxes" type="checkbox" checked /> Load
+                meshes</label
+              >
+              <label class="debug-item"
+                ><input id="dbgTexPathLabels" type="checkbox" /> Texture
+                paths</label
+              >
+              <label class="debug-item"
+                ><input id="dbgFxPlaceholders" type="checkbox" checked />
+                Particle effects</label
+              >
+              <label class="debug-item"
+                ><input id="dbgWireframe" type="checkbox" /> Wireframe</label
+              >
+            </div>
           </div>
+          <div class="settings-wrap">
+            <button
+              id="settingsBtn"
+              class="refresh-btn"
+              type="button"
+              aria-expanded="false"
+            >
+              Camera
+            </button>
+            <div id="settingsMenu" class="debug-menu settings-menu" hidden>
+              <label class="debug-item debug-range">
+                <span>FOV</span>
+                <input
+                  id="setFov"
+                  type="range"
+                  min="35"
+                  max="110"
+                  step="1"
+                  value="55"
+                />
+                <span id="setFovValue">55</span>
+              </label>
+              <label class="debug-item debug-range">
+                <span>Sensitivity</span>
+                <input
+                  id="setCamSens"
+                  type="range"
+                  min="20"
+                  max="300"
+                  step="1"
+                  value="100"
+                />
+                <span id="setCamSensValue">1.00x</span>
+              </label>
+              <button id="setLookBtn" class="refresh-btn" type="button">
+                Look: right mouse button
+              </button>
+            </div>
+          </div>
+          <button id="shareBtn" class="refresh-btn" type="button">Share</button>
+          <button id="fullscreenBtn" class="refresh-btn" type="button">
+            Fullscreen
+          </button>
         </div>
-        <button id="shareBtn" class="refresh-btn" type="button">
-          Share
-        </button>
-        <button id="fullscreenBtn" class="refresh-btn" type="button">
-          Fullscreen
-        </button>
       </div>
+      <button id="refreshBtn" class="refresh-btn" type="button">Refresh</button>
     </header>
 
     <dialog id="shareDialog" class="share-dialog">
@@ -171,12 +185,16 @@
       <p>Copy a server link or download a self-contained offline viewer.</p>
       <div class="share-actions">
         <button id="shareLinkBtn" type="button">Copy link</button>
-        <button id="shareOfflineBtn" type="button">Download offline HTML</button>
+        <button id="shareOfflineBtn" type="button">
+          Download offline HTML
+        </button>
         <button id="shareCloseBtn" type="button">Close</button>
       </div>
       <p id="shareStatus" role="status"></p>
       <ul id="shareMissing" class="share-missing"></ul>
-      <button id="continueOfflineBtn" type="button" hidden>Export anyway</button>
+      <button id="continueOfflineBtn" type="button" hidden>
+        Export anyway
+      </button>
     </dialog>
     <div id="appStatus" role="status" class="app-status"></div>
     <section id="landingView" class="landing-view">
@@ -186,11 +204,7 @@
         <p id="landingSub">
           Choose a snapshot to explore a scene or a replay to watch a recording.
         </p>
-        <nav
-          id="libraryTabs"
-          class="library-tabs"
-          aria-label="Content type"
-        >
+        <nav id="libraryTabs" class="library-tabs" aria-label="Content type">
           <button type="button" data-library-mode="rep" aria-pressed="true">
             Replays
           </button>
@@ -205,44 +219,22 @@
     <main id="viewerSection" class="main-layout" style="display: none">
       <section class="viewport-window">
         <div id="serverViewport">
-          <div
-            class="touch-controls"
-            role="group"
-            aria-label="Camera movement"
-          >
+          <div class="touch-controls" role="group" aria-label="Camera movement">
             <button type="button" data-move="KeyW" aria-label="Forward">
               ↑
             </button>
-            <button type="button" data-move="KeyA" aria-label="Left">
-              ←
-            </button>
-            <button type="button" data-move="KeyS" aria-label="Back">
-              ↓
-            </button>
-            <button type="button" data-move="KeyD" aria-label="Right">
-              →
-            </button>
-            <button type="button" data-move="KeyE" aria-label="Up">
-              ＋
-            </button>
-            <button type="button" data-move="KeyQ" aria-label="Down">
-              −
-            </button>
+            <button type="button" data-move="KeyA" aria-label="Left">←</button>
+            <button type="button" data-move="KeyS" aria-label="Back">↓</button>
+            <button type="button" data-move="KeyD" aria-label="Right">→</button>
+            <button type="button" data-move="KeyE" aria-label="Up">＋</button>
+            <button type="button" data-move="KeyQ" aria-label="Down">−</button>
           </div>
-        </div>
-        <div class="camera-help">
-          <span class="desktop-help"
-            >Mouse: hold the look button + WASD to move.</span
-          >
-          <span class="mobile-help"
-            >Drag the scene to look around; use the arrows to move.</span
-          >
         </div>
         <div id="replayBar" class="replay-bar" style="display: none">
           <button id="replayPlayBtn" class="refresh-btn" type="button">
             Play
           </button>
-            <button id="replayCamera" type="button" aria-pressed="false">
+          <button id="replayCamera" type="button" aria-pressed="false">
             Free camera
           </button>
           <button id="replayBack" type="button" aria-label="Back 5 seconds">
@@ -332,19 +324,12 @@
             Select a replay or snapshot.
           </div>
           <button id="downloadSnapshotBtn" class="download-btn" type="button">
-            Exportar JSON
-          </button>
-          <button
-            id="saveThumbnailBtn"
-            class="download-btn"
-            type="button"
-            disabled
-          >
-            Save scene thumbnail
+            Export JSON
           </button>
           <div class="bug-report">
             <div class="bug-report-text">
-              Session diagnostics for investigating capture and rendering issues.
+              Session diagnostics for investigating capture and rendering
+              issues.
             </div>
             <button id="downloadLogsBtn" class="download-btn" type="button">
               Export diagnostics

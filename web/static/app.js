@@ -1,18 +1,24 @@
+import { postEffectShader } from "./post-effects.mjs";
+import { AssetLoads } from "./asset-loads.mjs";
 import { chooseSpawnTarget } from "./camera-spawn.mjs";
 import { ReplayTimeline } from "./replay-timeline.mjs";
-import { downloadOffline } from "./offline-export.mjs?v=offline-1";
-import { toNum, toVec3, readAny, normalizePart, faceName, visibleDecalTexture, isCharHead, textureProxy, textureFetchUrl, meshProxy, usesBoxFaceMaterials } from "./scene-data.mjs?v=offline-1";
+import { downloadOffline } from "./offline-export.mjs?v=offline-2";
+import { toNum, toVec3, readAny, normalizePart, faceName, visibleDecalTexture, isCharHead, textureProxy, textureFetchUrl, meshProxy, usesBoxFaceMaterials } from "./scene-data.mjs?v=render-20261109-2";
 import { setCameraVisibility, cameraSees } from "./render-visibility.mjs";
 import { meshTexturePolicy, mapFragmentForMode } from "./render-appearance.mjs?v=render-20261108";
 import { classicClothingLayers, mapClassicClothingBoxUvs, projectClassicClothingMeshUvs } from "./classic-clothing.mjs?v=clothing-20261108";
 
 let THREE = null;
 let DDSLoaderClass = null;
+let RoundedBoxGeometryClass = null;
+let DecalGeometryClass = null;
 let OBJLoaderClass = null;
 let EffectComposerClass = null;
 let RenderPassClass = null;
 let UnrealBloomPassClass = null;
 let OutputPassClass = null;
+let ShaderPassClass = null;
+let BokehPassClass = null;
 let ddsLoader = null;
 const serverSelect = document.getElementById("serverSelect");
 const modeSelect = document.getElementById("modeSelect");
@@ -91,6 +97,7 @@ let repMap = null;
 let repDecalsByPart = new Map();
 let repDecalPathById = new Map();
 let repDecalsPanelDirty = false;
+let replayLightsDirty = false;
 const repInterpolatedPaths = new Set();
 let repChatRenderedData = null;
 let repChatRenderedCount = -1;
@@ -157,10 +164,20 @@ let occSphere = null;
 let occBox = null;
 let occNdcTmp = null;
 let renderStatusEl = null;
+let renderStage = "";
+const assetLoads = new AssetLoads(() => renderAssetProgress(), 6, job => {
+  if (job.kind !== 'texture') return;
+  const source = job.key.slice('texture:'.length);
+  for (const mesh of partMeshes) {
+    if (JSON.stringify(mesh.userData?.part || {}).includes(source)) applyMatTex(mesh, mesh.userData.part, renderVersion);
+  }
+});
 let fpsOverlayEl = null;
 let studsPatternTexture = null;
 let skyVisuals = null;
 let skyState = null;
+let starSignature = -1;
+let recordedSkyKey = "", recordedSkyCube = null, recordedEnvironment = null;
 let fpsLastAt = 0;
 let fpsFrameCount = 0;
 let fpsValue = 0;
@@ -168,6 +185,7 @@ let shdReady = false;
 const dbg = {
   shadersOn: true,
   smoothShadows: true,
+  smoothLighting: true,
   showFps: false,
   texturesOn: true,
   fogOn: true,
@@ -176,7 +194,7 @@ const dbg = {
   meshBoxesOn: true,
   texturePathLabelsOn: false,
   fxPlaceholdersOn: true,
-  controlsOn: true,
+  controlsOn: false,
   wireframeOn: false,
 };
 
@@ -196,8 +214,8 @@ const materialProfileByName = {
   DiamondPlate: { roughness: 0.44, metalness: 0.68, texture: null, tile: 1.1 },
   Concrete: { roughness: 0.95, metalness: 0.02, texture: null, tile: 1.0 },
   Slate: { roughness: 0.9, metalness: 0.02, texture: null, tile: 1.0 },
-  Plastic: { roughness: 0.58, metalness: 0.05, texture: null, tile: 1.0 },
-  SmoothPlastic: { roughness: 0.38, metalness: 0.06, texture: null, tile: 1.0 },
+  Plastic: { roughness: 0.58, metalness: 0, texture: null, tile: 1.0 },
+  SmoothPlastic: { roughness: 0.38, metalness: 0, texture: null, tile: 1.0 },
   Fabric: { roughness: 0.98, metalness: 0.0, texture: null, tile: 1.5 },
   Ice: { roughness: 0.15, metalness: 0.0, texture: null, tile: 1.0 },
 };
@@ -243,38 +261,39 @@ function safeSerialize(value) {
 
 function ensureHUD() {
   if (renderStatusEl || !viewport) return;
-  if (getComputedStyle(viewport).position === "static") {
-    viewport.style.position = "relative";
-  }
-  const el = document.createElement("div");
-  el.id = "renderStatusOverlay";
-  el.style.position = "absolute";
-  el.style.top = "12px";
-  el.style.left = "12px";
-  el.style.padding = "8px 12px";
-  el.style.borderRadius = "8px";
-  el.style.border = "1px solid rgba(255,255,255,0.22)";
-  el.style.background = "rgba(9, 14, 26, 0.78)";
-  el.style.color = "#e6edf5";
-  el.style.font = "600 13px Segoe UI, Tahoma, sans-serif";
-  el.style.letterSpacing = "0.2px";
-  el.style.zIndex = "15";
-  el.style.pointerEvents = "none";
-  el.style.display = "none";
-  viewport.appendChild(el);
-  renderStatusEl = el;
+  const panel = document.createElement("section");
+  panel.id = "renderStatusOverlay";
+  panel.className = "asset-progress";
+  panel.hidden = true;
+  const title = document.createElement("div"); title.id = "assetStage"; title.setAttribute("role", "status");
+  const counts = document.createElement("div"); counts.id = "assetCounts";
+  const bar = document.createElement("progress"); bar.id = "assetProgress"; bar.max = 1; bar.value = 0; bar.setAttribute("aria-label", "Scene asset loading");
+  const retry = document.createElement("button"); retry.id = "assetRetry"; retry.type = "button"; retry.textContent = "Retry failed assets";
+  retry.addEventListener("click", () => assetLoads.retryFailed());
+  const details = document.createElement("details"); details.id = "assetFailureDetails";
+  const summary = document.createElement("summary"); summary.textContent = "Failed assets";
+  const list = document.createElement("ul"); list.id = "assetFailures"; details.append(summary, list);
+  panel.append(title, counts, bar, retry, details); viewport.appendChild(panel); renderStatusEl = panel;
 }
-
 function setRenderStatus(text) {
+  renderStage = String(text || "").trim();
+  renderAssetProgress();
+}
+function renderAssetProgress() {
   ensureHUD();
   if (!renderStatusEl) return;
-  const content = String(text || "").trim();
-  if (!content) {
-    renderStatusEl.style.display = "none";
-    return;
+  const {mesh, texture, pending, failures} = assetLoads.summary();
+  const total = mesh.total + texture.total, ready = mesh.ready + texture.ready;
+  renderStatusEl.hidden = !renderStage && !pending && !failures.length;
+  document.getElementById("assetStage").textContent = renderStage || (pending ? "Loading scene assets…" : `${failures.length} assets failed to load`);
+  document.getElementById("assetCounts").textContent = `Meshes ${mesh.ready}/${mesh.total} · Textures ${texture.ready}/${texture.total}`;
+  document.getElementById("assetProgress").value = total ? ready / total : 0;
+  document.getElementById("assetRetry").hidden = !failures.length || pending > 0;
+  document.getElementById("assetFailureDetails").hidden = !failures.length;
+  const list = document.getElementById("assetFailures"); list.replaceChildren();
+  for (const failure of failures) {
+    const item = document.createElement("li"); item.textContent = `${failure.kind}: ${failure.key} — ${failure.error}`; list.appendChild(item);
   }
-  renderStatusEl.textContent = content;
-  renderStatusEl.style.display = "block";
 }
 
 function ensureFpsHUD() {
@@ -618,8 +637,7 @@ function applyFxPlaceholderMode() {
 }
 
 function applyControlsHelpMode() {
-  if (!cameraHelp) return;
-  cameraHelp.style.display = dbg.controlsOn ? "block" : "none";
+  if (cameraHelp) cameraHelp.style.display = "none";
 }
 
 function rstShMap(light) {
@@ -646,7 +664,7 @@ function apShdwMd() {
   }
   three.dir.castShadow = three.dir.userData.globalShadows !== false;
   three.dir.shadow.camera.layers.enable(1);
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = dbg.smoothShadows ? THREE.PCFShadowMap : THREE.BasicShadowMap;
   const mobile = viewport?.clientWidth < 700;
   const preferredSize = mobile
     ? (dbg.smoothShadows ? 1536 : 1024)
@@ -659,9 +677,9 @@ function apShdwMd() {
     rstShMap(three.dir);
   }
   if (dbg.smoothShadows) {
-    three.dir.shadow.radius = 1.05;
+    three.dir.shadow.radius = 0.5 + Math.max(0,Math.min(1,toNum(latestSnapshot?.lighting?.shadowSoftness,0.5))) * 4;
   } else {
-    three.dir.shadow.radius = 0.65;
+    three.dir.shadow.radius = 0;
   }
   three.dir.shadow.bias = -0.0002;
   three.dir.shadow.normalBias = 0.002;
@@ -1001,27 +1019,17 @@ function loadTexSrc(src, onDone) {
 
   const raw = String(src || "").trim();
   const low = raw.toLowerCase();
+  if (!raw || !THREE) { onDone(null); return; }
   const url = textureFetchUrl(raw);
-  if ((low.endsWith(".dds") || url.toLowerCase().includes(".dds")) && ddsLoader) {
-    ddsLoader.load(
-      url,
-      (tex) => onDone(isValidTex(tex) ? tex : null),
-      undefined,
-      () => onDone(null)
-    );
-    return;
-  }
-  if (!three) {
-    onDone(null);
-    return;
-  }
-  const loader = new THREE.TextureLoader();
-  loader.load(
-    url,
-    (tex) => onDone(isValidTex(tex) ? tex : null),
-    undefined,
-    () => onDone(null)
-  );
+  assetLoads.load('texture:' + raw, 'texture', (attempt) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Texture request timed out')), 25000);
+    const done = tex => { clearTimeout(timer); if (isValidTex(tex)) resolve(tex); else reject(new Error('Invalid texture')); };
+    const fail = () => { clearTimeout(timer); reject(new Error('Texture unavailable')); };
+    const loader = (low.endsWith('.dds') || raw.includes('.dds')) && ddsLoader ? ddsLoader : new THREE.TextureLoader();
+    const retryUrl = attempt > 1 && url.startsWith('/api/') ? url + '&retry=' + attempt : url;
+    loader.load(retryUrl, done, undefined, fail);
+  }), {onValue: onDone, optional:raw.startsWith('/api/material/')});
+
 }
 
 function loadImgNoBlack(src, threshold = 26) {
@@ -1143,6 +1151,19 @@ function syncSky(sunVector, dayMix, nightMix, clockTime) {
   if (!three || !skyVisuals) return;
   const showCelestial = skyState?.skySettings?.celestialBodiesShown !== false;
   const radius = 520;
+  const starCount = Math.max(0,Math.min(5000,Math.floor(toNum(skyState?.skySettings?.starCount,0))));
+  if (starSignature !== starCount) {
+    starSignature = starCount;
+    if (skyVisuals.stars) { skyVisuals.group.remove(skyVisuals.stars); skyVisuals.stars.geometry.dispose(); skyVisuals.stars.material.dispose(); }
+    const positions = new Float32Array(starCount * 3);
+    let seed = 13;
+    const random = () => { seed = (Math.imul(seed,1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+    for(let i=0;i<starCount;i++) { const y=random()*2-1, a=random()*Math.PI*2, r=Math.sqrt(1-y*y); positions.set([r*Math.cos(a)*radius,y*radius,r*Math.sin(a)*radius],i*3); }
+    const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));
+    skyVisuals.stars = new THREE.Points(geometry,new THREE.PointsMaterial({color:'#ffffff',size:1,sizeAttenuation:false,transparent:true,depthWrite:false}));
+    skyVisuals.group.add(skyVisuals.stars);
+  }
+  if (skyVisuals.stars) { skyVisuals.stars.visible = showCelestial && nightMix > 0.15; skyVisuals.stars.material.opacity = nightMix; }
   const base = three.controls?.target ? three.controls.target.clone() : new THREE.Vector3();
   skyVisuals.group.position.copy(base);
   const sunPos = sunVector.clone().multiplyScalar(radius);
@@ -1150,12 +1171,14 @@ function syncSky(sunVector, dayMix, nightMix, clockTime) {
 
   if (skyVisuals.sun) {
     skyVisuals.sun.position.copy(sunPos);
+    skyVisuals.sun.scale.setScalar(2 * radius * Math.tan(THREE.MathUtils.degToRad(toNum(skyState?.skySettings?.sunAngularSize,21)) / 2));
     const hasSunMap = texReady(skyVisuals.sun?.material?.map);
     skyVisuals.sun.visible = hasSunMap && showCelestial;
     if (hasSunMap) skyVisuals.sun.material.opacity = 0.2 + dayMix * 0.8;
   }
   if (skyVisuals.moon) {
     skyVisuals.moon.position.copy(moonPos);
+    skyVisuals.moon.scale.setScalar(2 * radius * Math.tan(THREE.MathUtils.degToRad(toNum(skyState?.skySettings?.moonAngularSize,11)) / 2));
     const hasMoonMap = texReady(skyVisuals.moon?.material?.map);
     skyVisuals.moon.visible = hasMoonMap && showCelestial && nightMix > 0.08 && moonPos.y > 6;
     if (hasMoonMap) skyVisuals.moon.material.opacity = 0.35 + nightMix * 0.65;
@@ -1168,8 +1191,10 @@ function syncSky(sunVector, dayMix, nightMix, clockTime) {
       const off = toNum(cloud.userData?.cloudOffset, 0);
       const a = t * 0.2 + off;
       cloud.position.set(Math.cos(a) * 220, 110 + Math.sin(a * 0.7) * 22, Math.sin(a) * 220);
-      cloud.material.opacity = 0.08 + dayMix * 0.2;
-      cloud.visible = dayMix > 0.05;
+      const recorded = skyState?.clouds;
+      cloud.material.opacity = recorded ? Math.max(0,Math.min(1,toNum(recorded.density,0.5) * toNum(recorded.cover,0.5))) : 0.08 + dayMix * 0.2;
+      cloud.material.color.set(recorded?.color || '#ffffff');
+      cloud.visible = dayMix > 0.05 && recorded?.enabled !== false && (recorded ? toNum(recorded.cover,0) > 0 : !recordedSkyCube);
     }
   }
 }
@@ -1202,9 +1227,15 @@ function partHalfAlongFace(part, faceRaw) {
 
 function collectLightNodes(snapshot) {
   const roots = Array.isArray(snapshot?.explorer?.services) ? snapshot.explorer.services : [];
-  if (roots.length === 0) return [];
   const queue = [...roots];
   const out = [];
+  for (const mesh of partMeshes) {
+    const part = mesh.userData?.part;
+    for (const [index,light] of (part?.lights || []).entries()) {
+      out.push({className:light.className, anchorPath:part.path, path:part.path + '/light-' + index,
+        properties:{Enabled:light.enabled, Color:light.color, Brightness:light.brightness, Range:light.range, Shadows:light.shadows, Angle:light.angle, Face:light.face}, attachment:light.position, attachmentOrientation:light.orientation});
+    }
+  }
   while (queue.length > 0) {
     const node = queue.shift();
     if (!node || typeof node !== "object") continue;
@@ -1230,7 +1261,7 @@ function addLights(snapshot) {
     const enabled = Boolean(readAny(props, ["Enabled"]) ?? true);
     if (!enabled) continue;
     const path = String(node.path || "");
-    const anchorPath = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    const anchorPath = node.anchorPath || (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
     const anchor = findAnchorMeshByPath(anchorPath);
     if (!anchor) continue;
     const part = anchor.userData?.part || {};
@@ -1240,10 +1271,11 @@ function addLights(snapshot) {
     const range = Math.max(1, toNum(readAny(props, ["Range"]), 18));
     const faceRaw = readAny(props, ["Face"]) || "Enum.NormalId.Front";
     const wantsShadow = Boolean(readAny(props, ["Shadows"]) ?? false);
-    const faceVec = readFaceNormal(faceRaw).applyQuaternion(anchor.quaternion).normalize();
-    const anchorPos = anchor.position.clone();
-    const offset = partHalfAlongFace(part, faceRaw) + 0.06;
-    const facePos = anchorPos.clone().add(faceVec.clone().multiplyScalar(offset));
+    const faceVec = readFaceNormal(faceRaw);
+    if (node.attachmentOrientation) { const r = node.attachmentOrientation; faceVec.applyEuler(new THREE.Euler(THREE.MathUtils.degToRad(toNum(r.x,0)),THREE.MathUtils.degToRad(toNum(r.y,0)),THREE.MathUtils.degToRad(toNum(r.z,0)),"YXZ")); }
+    const pos = node.attachment || {};
+    const anchorPos = new THREE.Vector3(toNum(pos.x,0),toNum(pos.y,0),toNum(pos.z,0));
+    const facePos = anchorPos.clone().addScaledVector(faceVec,node.attachment ? 0 : partHalfAlongFace(part,faceRaw) + 0.06);
 
     let light = null;
     const cls = String(node.className || "");
@@ -1255,7 +1287,7 @@ function addLights(snapshot) {
       light = new THREE.SpotLight(colorHex, brightness * (cls === "SurfaceLight" ? 2.2 : 2.0), range, THREE.MathUtils.degToRad(angleDeg * 0.5), 0.35, 1.65);
       light.position.copy(facePos);
       light.target.position.copy(facePos.clone().add(faceVec.clone().multiplyScalar(Math.max(4, range))));
-      three.scene.add(light.target);
+      anchor.add(light.target);
     }
     if (!light) continue;
     light.userData.wantsShadow = wantsShadow && shadowBudget > 0;
@@ -1267,7 +1299,7 @@ function addLights(snapshot) {
       light.shadow.bias = -0.00015;
       light.shadow.normalBias = 0.002;
     }
-    three.scene.add(light);
+    anchor.add(light);
     sceneLights.push(light);
   }
 }
@@ -1748,37 +1780,26 @@ function applyMeshGeo(mesh, part, version) {
   const meshId = String(part.meshId || "").trim();
   if (!meshId) return;
 
-  fetch(meshProxy(meshId), { cache: "force-cache" })
-    .then((res) => {
-      if (!res.ok) return null;
-      return res.text();
-    })
-    .then((text) => {
-      if (!text || version !== renderVersion || !mesh || !mesh.material) return;
-      const probe = text.slice(0, 6000);
-      const vertexCount = (probe.match(/\nv\s+/g) || []).length + (probe.startsWith("v ") ? 1 : 0);
-      const looksLikeObj =
-        /(^|\n)\s*(o|g|mtllib|usemtl|v|vn|vt|f)\s+/m.test(probe) && vertexCount >= 3;
-      if (!looksLikeObj) return;
-      const loader = new OBJLoaderClass();
-      const obj = loader.parse(text);
-      if (version !== renderVersion || !mesh || !mesh.material) return;
-      let found = null;
-      obj.traverse((child) => {
-        if (!found && child?.isMesh && child.geometry) {
-          found = child;
-        }
-      });
-      if (!found || !found.geometry) return;
-
-      const geom = found.geometry.clone();
+  assetLoads.load(meshId, "mesh", async (attempt) => {
+    const response = await fetch(meshProxy(meshId), {cache: attempt > 1 ? "reload" : "default", signal:AbortSignal.timeout(25000)});
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const text = await response.text();
+    if (!/(^|\n)\s*v\s+/.test(text)) throw new Error("Invalid mesh response");
+    const obj = new OBJLoaderClass().parse(text);
+    let found = null;
+    obj.traverse(child => { if (!found && child?.isMesh && child.geometry) found = child.geometry; });
+    if (!found) throw new Error("Mesh has no geometry");
+    return found;
+  }, {onValue: geometry => {
+      if (!geometry || version !== renderVersion || !mesh?.material) return;
+      const geom = geometry.clone();
       geom.computeBoundingBox();
       const box = geom.boundingBox;
       if (!box) return;
 
       const sourceSize = new THREE.Vector3();
       box.getSize(sourceSize);
-      if (sourceSize.x <= 1e-5 || sourceSize.y <= 1e-5 || sourceSize.z <= 1e-5) return;
+      if (Math.max(sourceSize.x, sourceSize.y, sourceSize.z) <= 1e-5) return;
 
       const center = new THREE.Vector3();
       box.getCenter(center);
@@ -1787,11 +1808,16 @@ function applyMeshGeo(mesh, part, version) {
       const sy = Math.max(0.2, toNum(part?.size?.y, 4));
       const sz = Math.max(0.2, toNum(part?.size?.z, 4));
       if (part.meshScale) {
+        const builtinHead = String(part.meshType || '').endsWith('.Head') || (!part.meshType && String(part.meshId).endsWith('avatar/heads/head.mesh'));
+        if (builtinHead) {
+          geom.translate(-center.x,-center.y,-center.z);
+          geom.scale(1 / Math.max(1e-5,sourceSize.x),1 / Math.max(1e-5,sourceSize.y),1 / Math.max(1e-5,sourceSize.z));
+        }
         geom.scale(part.meshScale.x, part.meshScale.y, part.meshScale.z);
         if (part.meshOffset) geom.translate(part.meshOffset.x, part.meshOffset.y, part.meshOffset.z);
       } else {
         geom.translate(-center.x, -center.y, -center.z);
-        geom.scale(sx / sourceSize.x, sy / sourceSize.y, sz / sourceSize.z);
+        geom.scale(sourceSize.x > 1e-5 ? sx / sourceSize.x : 1, sourceSize.y > 1e-5 ? sy / sourceSize.y : 1, sourceSize.z > 1e-5 ? sz / sourceSize.z : 1);
       }
       if (!geom.hasAttribute("normal")) geom.computeVertexNormals();
 
@@ -1816,6 +1842,8 @@ function applyMeshGeo(mesh, part, version) {
 
       if (mesh.geometry) mesh.geometry.dispose();
       mesh.geometry = geom;
+      mesh.userData.assetGeometryLoaded = true;
+      refreshHeadDecals(mesh);
       for (const overlay of mesh.userData.clothingOverlays || []) {
         if (overlay.userData.ownsGeometry) overlay.geometry.dispose();
         const projected = projectClassicClothingMeshUvs(geom, part.name);
@@ -1832,9 +1860,8 @@ function applyMeshGeo(mesh, part, version) {
         if (mat && "side" in mat) mat.side = part?.doubleSided ? THREE.DoubleSide : THREE.FrontSide;
       }
       buildMeshChunks(mesh, part);
-      refShdPl();
-    })
-    .catch(() => {});
+      if (three.renderer.shadowMap) three.renderer.shadowMap.needsUpdate = true;
+  }});
 }
 
 function updateFly(delta) {
@@ -1981,6 +2008,8 @@ async function ensureThreeModules() {
   if (THREE) return true;
   try {
     THREE = await import("three");
+    ({RoundedBoxGeometry: RoundedBoxGeometryClass} = await import("three/addons/geometries/RoundedBoxGeometry.js"));
+    ({DecalGeometry: DecalGeometryClass} = await import("three/addons/geometries/DecalGeometry.js"));
     return true;
   } catch (error) {
     addClientLog("error", "three module load failed", { message: error?.message || String(error) });
@@ -2014,16 +2043,20 @@ async function ensureOBJ() {
 async function ensurePostFX() {
   if ((EffectComposerClass && RenderPassClass && UnrealBloomPassClass && OutputPassClass) || !THREE) return true;
   try {
-    const [composer, render, bloom, output] = await Promise.all([
+    const [composer, render, bloom, output, shader, bokeh] = await Promise.all([
       import("three/addons/postprocessing/EffectComposer.js"),
       import("three/addons/postprocessing/RenderPass.js"),
       import("three/addons/postprocessing/UnrealBloomPass.js"),
       import("three/addons/postprocessing/OutputPass.js"),
+      import("three/addons/postprocessing/ShaderPass.js"),
+      import("three/addons/postprocessing/BokehPass.js"),
     ]);
     EffectComposerClass = composer.EffectComposer;
     RenderPassClass = render.RenderPass;
     UnrealBloomPassClass = bloom.UnrealBloomPass;
     OutputPassClass = output.OutputPass;
+    ShaderPassClass = shader.ShaderPass;
+    BokehPassClass = bokeh.BokehPass;
     return true;
   } catch (error) {
     addClientLog("warn", "postfx module load failed", { message: error?.message || String(error) });
@@ -2173,15 +2206,18 @@ async function setupThree() {
   scene.add(fill);
   scene.fog = new THREE.Fog("#c8c8c8", 30, 220);
   let composer = null;
-  let bloom = null;
+  let bloom = null, post = null, bokeh = null;
   if (EffectComposerClass && RenderPassClass && UnrealBloomPassClass && OutputPassClass) {
     composer = new EffectComposerClass(renderer);
     composer.addPass(new RenderPassClass(scene, camera));
+    bokeh = new BokehPassClass(scene, camera, {focus:20, aperture:0.0001, maxblur:0.01});
+    bokeh.enabled = false; composer.addPass(bokeh);
     bloom = new UnrealBloomPassClass(new THREE.Vector2(viewport.clientWidth, viewport.clientHeight), 0.35, 0.55, 0.9);
     composer.addPass(bloom);
+    post = new ShaderPassClass(postEffectShader(THREE)); composer.addPass(post);
     composer.addPass(new OutputPassClass());
   }
-  three = { scene, camera, renderer, hemi, dir, fill, controls, floorMesh: null, composer, bloom };
+  three = { scene, camera, renderer, hemi, dir, fill, controls, floorMesh: null, composer, bloom, post, bokeh };
   shdReady = false;
   await initSky();
   ensureHUD();
@@ -2207,9 +2243,16 @@ async function setupThree() {
     updateFly(delta);
     updateOcc(now);
     updateFpsOverlay(now);
+    updateNameplates();
     controls.update();
     if (skyState) {
       syncSky(skyState.sunVector, skyState.dayMix, skyState.nightMix, skyState.clockTime);
+    }
+    if (three?.post && skyState) {
+      const sunPoint = camera.position.clone().addScaledVector(skyState.sunVector, 500).project(camera);
+      three.post.uniforms.sunPosition.value.set(sunPoint.x * 0.5 + 0.5, sunPoint.y * 0.5 + 0.5);
+      three.post.uniforms.sunIntensity.value = sunPoint.z < 1 && skyState.sunVector.y > 0 ? (skyState.sunRaysIntensity || 0) : 0;
+      three.post.uniforms.atmosphereGlare.value = sunPoint.z < 1 && skyState.sunVector.y > 0 ? skyState.glare : 0;
     }
     if (three?.composer && dbg.shadersOn && shdReady) {
       three.composer.render();
@@ -2637,11 +2680,12 @@ function buildPartMesh(part, idx) {
   const rz = THREE.MathUtils.degToRad(toNum(part?.orientation?.z, 0));
 
   const color = hexColor(part?.color3 || "#d1d5db");
-  const transp = Math.min(0.95, Math.max(0, toNum(part?.transparency, 0)));
+  const transp = Math.min(1, Math.max(0, toNum(part?.transparency, 0)));
   const profile = materialProfile(part?.material);
 
   const shape = String(part?.shape || "").replace("Enum.PartType.", "").toLowerCase();
-  let geometry = new THREE.BoxGeometry(sx, sy, sz);
+  const classicBody = !part.meshId && RoundedBoxGeometryClass && (String(part.rigType).endsWith('.R6') || part.clothing) && /^(Torso|Left Arm|Right Arm|Left Leg|Right Leg)$/.test(part.name);
+  let geometry = classicBody ? new RoundedBoxGeometryClass(sx, sy, sz, 1, Math.min(sx, sy, sz) * 0.035) : new THREE.BoxGeometry(sx, sy, sz);
   if (shape === "ball") {
     geometry = new THREE.SphereGeometry(Math.max(sx, sy, sz) / 2, 24, 18);
   } else if (shape === "cylinder") {
@@ -2656,7 +2700,9 @@ function buildPartMesh(part, idx) {
       opacity: 1 - transp,
       roughness: profile.roughness,
       metalness: profile.metalness,
+      envMapIntensity: toNum(latestSnapshot?.lighting?.environmentSpecularScale,0),
       side: THREE.FrontSide,
+      flatShading: !dbg.smoothLighting,
     })
   );
 
@@ -2723,6 +2769,32 @@ function decalFaceTf(mesh, face) {
   return { w: Math.max(0.15, w), h: Math.max(0.15, h), offset, rot };
 }
 
+function syncRecordedSky(settings) {
+  const faces = ['skyboxRt','skyboxLf','skyboxUp','skyboxDn','skyboxBk','skyboxFt'].map(key => String(settings[key] || ''));
+  const signature = faces.join('|');
+  if (signature === recordedSkyKey) {
+    if (recordedSkyCube) three.scene.background = recordedSkyCube;
+    return;
+  }
+  recordedSkyKey = signature;
+  if (recordedSkyCube) recordedSkyCube.dispose();
+  recordedEnvironment?.dispose(); recordedEnvironment = null; recordedSkyCube = null;
+  three.scene.environment = null;
+  if (faces.some(face => !face)) return;
+  const images = [];
+  faces.forEach((face,index) => loadTexSrc(face, texture => {
+    if (!texture || recordedSkyKey !== signature) return;
+    images[index] = texture.image;
+    if (images.filter(Boolean).length !== 6) return;
+    recordedSkyCube?.dispose();
+    recordedSkyCube = new THREE.CubeTexture(images); recordedSkyCube.colorSpace = THREE.SRGBColorSpace; recordedSkyCube.needsUpdate = true;
+    three.scene.background = recordedSkyCube;
+    const generator = new THREE.PMREMGenerator(three.renderer);
+    recordedEnvironment?.dispose(); recordedEnvironment = generator.fromCubemap(recordedSkyCube); generator.dispose();
+    three.scene.environment = recordedEnvironment.texture;
+  }));
+}
+
 function syncLight(snapshot) {
   if (!three) return;
   const lighting = snapshot.lighting || {};
@@ -2761,6 +2833,8 @@ function syncLight(snapshot) {
     nightMix,
     clockTime,
     skySettings,
+    clouds:lighting.clouds,
+    glare:atmGlare * atmDensity,
   };
 
   const bgDay = new THREE.Color("#b7c9d8");
@@ -2768,56 +2842,77 @@ function syncLight(snapshot) {
   const sky = bgNight.clone().lerp(bgDay, dayMix);
   sky.lerp(new THREE.Color(atmColor), Math.min(0.42, atmDensity * 1.8 + atmHaze * 0.12));
   three.scene.background = sky;
+  syncRecordedSky(skySettings);
+  if (three.scene.backgroundRotation && skySettings.skyboxOrientation) {
+    const r = skySettings.skyboxOrientation;
+    three.scene.backgroundRotation.set(THREE.MathUtils.degToRad(toNum(r.x,0)), THREE.MathUtils.degToRad(toNum(r.y,0)), THREE.MathUtils.degToRad(toNum(r.z,0)), "YXZ");
+    if (three.scene.environmentRotation) three.scene.environmentRotation.copy(three.scene.backgroundRotation);
+  }
 
   if (three.renderer && dbg.shadersOn) {
-    three.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    const glareBoost = 1 + Math.min(0.55, atmGlare * 0.3);
-    const exposureScale = Math.max(0.65, Math.min(1.4, Math.pow(2, exposureComp) * (0.9 + brightness * 0.05) * Math.min(1.1, glareBoost)));
-    three.renderer.toneMappingExposure = exposureScale;
+    const grading = postEffects.find(effect => effect.className === 'ColorGradingEffect' && effect.enabled);
+    three.renderer.toneMapping = String(grading?.tonemapperPreset || '').endsWith('.Retro') ? THREE.ReinhardToneMapping : THREE.ACESFilmicToneMapping;
+    three.renderer.toneMappingExposure = Math.pow(2, Math.max(-5, Math.min(5, exposureComp)));
   }
 
-  const hemiTop = new THREE.Color(outdoor)
-    .lerp(new THREE.Color("#d7e3ff"), nightMix * 0.35)
-    .lerp(new THREE.Color(atmDecay), Math.min(0.3, atmHaze * 0.1));
-  if (lighting.colorShiftTop) hemiTop.lerp(new THREE.Color(hexColor(lighting.colorShiftTop)), 0.08);
-  three.hemi.color.copy(hemiTop);
-  three.hemi.groundColor.set(ambient);
-  if (lighting.colorShiftBottom) three.hemi.groundColor.lerp(new THREE.Color(hexColor(lighting.colorShiftBottom)), 0.08);
-  const diffuseScale = Math.max(0, Math.min(1, toNum(lighting.environmentDiffuseScale, 0)));
-  three.hemi.intensity = 0.85 + dayMix * 0.35 + Math.min(0.25, brightness * 0.05) + diffuseScale * 0.18;
-
-  const sunColor = new THREE.Color("#fff2cf").lerp(new THREE.Color("#c7d5ff"), nightMix * 0.8);
+  const ambientColor = new THREE.Color(ambient);
+  const outsideColor = new THREE.Color(globalShadows ? outdoor : ambient);
+  const skyContribution = outsideColor.clone().sub(ambientColor);
+  skyContribution.r = Math.max(0,skyContribution.r); skyContribution.g = Math.max(0,skyContribution.g); skyContribution.b = Math.max(0,skyContribution.b);
+  const diffuseScale = Math.max(0, Math.min(1, toNum(lighting.environmentDiffuseScale,0)));
+  const specularScale = Math.max(0, Math.min(1, toNum(lighting.environmentSpecularScale,0)));
+  three.hemi.color.copy(skyContribution);
+  three.hemi.groundColor.set('#000000');
+  three.hemi.intensity = globalShadows ? 1 + diffuseScale : 0;
+  const sunColor = new THREE.Color('#ffffff');
+  if (lighting.colorShiftTop) sunColor.add(new THREE.Color(hexColor(lighting.colorShiftTop)));
   three.dir.color.copy(sunColor);
-  const directBase = Math.max(0, (sunHeight + 0.15) * 0.9);
-  three.dir.intensity = 0.2 + directBase * (0.5 + Math.min(0.15, brightness * 0.06));
-  three.dir.userData.globalShadows = Boolean(globalShadows ?? true);
+  const realistic = String(lighting.lightingStyle || lighting.technology || '').match(/Realistic|Future|ShadowMap/);
+  three.dir.intensity = Math.max(0,brightness) * (sunHeight > 0 ? 1 : 0.12) * (realistic ? 1.4 : 1.1);
+  three.dir.userData.globalShadows = globalShadows;
   if (three.fill) {
-    three.fill.color.set("#ffffff");
-    three.fill.intensity = 0.7 + nightMix * 0.1;
+    three.fill.color.copy(ambientColor);
+    if (lighting.colorShiftBottom) three.fill.color.add(new THREE.Color(hexColor(lighting.colorShiftBottom)));
+    three.fill.intensity = 1;
   }
-  if (three.bloom) {
-    const bloomEffect = postEffects.find((effect) => effect?.className === "BloomEffect");
-    const sunRaysEffect = postEffects.find((effect) => effect?.className === "SunRaysEffect");
-    three.bloom.threshold = bloomEffect?.enabled
-      ? Math.max(0, Math.min(1, toNum(bloomEffect.threshold, 0.8)))
-      : 0.84 - Math.min(0.2, atmGlare * 0.08);
-    three.bloom.strength = bloomEffect
-      ? (bloomEffect.enabled ? Math.max(0, Math.min(1.2, toNum(bloomEffect.intensity, 0) * 0.18)) : 0)
-      : 0.08 + dayMix * 0.04 + Math.min(0.18, atmGlare * 0.08);
-    if (sunRaysEffect?.enabled) three.bloom.strength += Math.max(0, Math.min(0.15, toNum(sunRaysEffect.intensity, 0) * 0.08));
-    three.bloom.radius = bloomEffect?.enabled
-      ? Math.max(0, Math.min(1, toNum(bloomEffect.size, 24) / 100))
-      : (dbg.smoothShadows ? 0.62 : 0.4);
+  if (three.scene.userData.specularScale !== specularScale) {
+    three.scene.userData.specularScale = specularScale;
+    for (const mesh of partMeshes) for (const mat of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      if ('envMapIntensity' in mat) mat.envMapIntensity = specularScale;
+    }
   }
 
-  if (three.renderer?.domElement) {
-    const correction = postEffects.find((effect) => effect?.className === "ColorCorrectionEffect" && effect.enabled);
-    const blur = postEffects.find((effect) => effect?.className === "BlurEffect" && effect.enabled);
-    const brightnessFilter = correction ? Math.max(0.2, 1 + toNum(correction.brightness, 0) * 0.6) : 1;
-    const contrastFilter = correction ? Math.max(0.2, 1 + toNum(correction.contrast, 0) * 0.6) : 1;
-    const saturationFilter = correction ? Math.max(0, 1 + toNum(correction.saturation, 0)) : 1;
-    const blurPx = blur ? Math.max(0, Math.min(8, toNum(blur.size, 0) * 0.08)) : 0;
-    three.renderer.domElement.style.filter = `brightness(${brightnessFilter}) contrast(${contrastFilter}) saturate(${saturationFilter}) blur(${blurPx}px)`;
+  if (three.bloom) {
+    const blooms = postEffects.filter(effect => effect?.className === "BloomEffect" && effect.enabled);
+    three.bloom.enabled = blooms.length > 0;
+    three.bloom.strength = blooms.reduce((sum,e)=>sum+Math.max(0,toNum(e.intensity,0)),0);
+    three.bloom.threshold = blooms.length ? Math.min(...blooms.map(e=>toNum(e.threshold,1))) : 1;
+    three.bloom.radius = blooms.length ? Math.min(1, Math.max(...blooms.map(e=>toNum(e.size,24)))/56) : 0;
+  }
+
+  if (three.post) {
+    const enabled = postEffects.filter(effect => effect.enabled);
+    const corrections = enabled.filter(effect => effect.className === "ColorCorrectionEffect");
+    const uniforms = three.post.uniforms;
+    uniforms.brightness.value = corrections.reduce((sum,e) => sum + toNum(e.brightness,0),0);
+    uniforms.contrast.value = corrections.reduce((sum,e) => sum + toNum(e.contrast,0),0);
+    uniforms.saturation.value = corrections.reduce((sum,e) => sum + toNum(e.saturation,0),0);
+    uniforms.tint.value.set('#ffffff');
+    for (const correction of corrections) uniforms.tint.value.multiply(new THREE.Color(hexColor(correction.tintColor || '#ffffff')));
+    uniforms.blurSize.value = enabled.filter(e => e.className === 'BlurEffect').reduce((max,e) => Math.max(max,toNum(e.size,0)),0) * 0.5;
+    uniforms.sunSpread.value = toNum(enabled.find(e=>e.className==='SunRaysEffect')?.spread,0.5);
+    skyState.sunRaysIntensity = enabled.filter(e=>e.className==='SunRaysEffect').reduce((sum,e)=>sum+toNum(e.intensity,0),0);
+    uniforms.resolution.value.set(three.renderer.domElement.width,three.renderer.domElement.height);
+    three.renderer.domElement.style.filter = '';
+    const dof = enabled.find(e => e.className === 'DepthOfFieldEffect');
+    if (three.bokeh) {
+      three.bokeh.enabled = Boolean(dof && (toNum(dof.nearIntensity,0)>0 || toNum(dof.farIntensity,0)>0));
+      if (dof) {
+        three.bokeh.uniforms.focus.value = Math.max(0.1,toNum(dof.focusDistance,20));
+        three.bokeh.uniforms.aperture.value = 0.001 / Math.max(1,toNum(dof.inFocusRadius,10));
+        three.bokeh.uniforms.maxblur.value = Math.max(toNum(dof.nearIntensity,0),toNum(dof.farIntensity,0)) * 0.015;
+      }
+    }
   }
 
   if (three.dir.shadow && three.controls?.target) {
@@ -2840,11 +2935,11 @@ function syncLight(snapshot) {
 
   const fogStart = toNum(lighting.fogStart, 120);
   const fogEnd = toNum(lighting.fogEnd, 650);
-  const fogDensityFactor = 1 + atmDensity * 3.1 + atmHaze * 0.07;
-  const near = Math.max(6, fogStart / (4 * fogDensityFactor));
-  const far = Math.max(near + 14, fogEnd / (4 * Math.max(0.7, fogDensityFactor)));
-  const fogMix = new THREE.Color(fogColor).lerp(new THREE.Color(atmColor), Math.min(0.45, atmDensity * 1.8 + atmHaze * 0.08));
-  three.scene.fog = dbg.fogOn ? new THREE.Fog(fogMix, near, far) : null;
+  const fogMix = new THREE.Color(fogColor).lerp(new THREE.Color(atmColor), Math.min(1, atmDensity + atmHaze * 0.05));
+  fogMix.lerp(new THREE.Color(atmDecay),Math.min(0.7, nightMix * atmHaze * 0.15));
+  if (!dbg.fogOn) three.scene.fog = null;
+  else if (atmDensity > 0) three.scene.fog = new THREE.FogExp2(fogMix, atmDensity * 0.001 * (1 + atmHaze * 0.2) * Math.max(0.1,1 - toNum(atmosphere.offset,0) * 0.3));
+  else three.scene.fog = new THREE.Fog(fogMix, Math.max(0,fogStart), Math.max(fogStart + 1,fogEnd));
   syncSky(sunVector, dayMix, nightMix, clockTime);
   apShdwMd();
 }
@@ -2859,21 +2954,20 @@ function makeTextSprite(text) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "rgba(0,0,0,0.68)";
-  ctx.fillRect(8, 20, canvas.width - 16, 88);
-  ctx.strokeStyle = "rgba(255,255,255,0.55)";
-  ctx.lineWidth = 3;
-  ctx.strokeRect(8, 20, canvas.width - 16, 88);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "700 44px Segoe UI";
+  ctx.font = "500 40px Arial, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(label, canvas.width / 2, canvas.height / 2 + 2);
+  ctx.strokeStyle = "rgba(0,0,0,0.7)";
+  ctx.lineWidth = 3;
+  ctx.lineJoin = "round";
+  ctx.strokeText(label, canvas.width / 2, canvas.height / 2, canvas.width - 16);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(label, canvas.width / 2, canvas.height / 2, canvas.width - 16);
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false });
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true, depthWrite: false });
   const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(9, 2.3, 1);
+  sprite.scale.set(Math.min(4.5, Math.max(2.2, label.length * 0.17)), 0.65, 1);
   sprite.renderOrder = 25;
   sprite.userData.isBillboard = true;
   sprite.frustumCulled = false;
@@ -2885,11 +2979,33 @@ function addHeadLabel(mesh) {
   if (!isCharHead(part) || !part.characterName || mesh.userData.characterLabel) return;
   const sprite = makeTextSprite(part.characterName);
   if (!sprite) return;
-  sprite.position.set(0, Math.max(0.5, toNum(part.size?.y, 2) / 2) + 2.2, 0);
-  sprite.visible = Boolean(dbg.playerLabelsOn);
+  sprite.position.set(0, Math.max(0.5, toNum(part.size?.y, 2) / 2) + 0.7, 0);
+  sprite.visible = Boolean(dbg.playerLabelsOn && part.showName !== false);
+  sprite.userData.sourceHead = mesh;
+  sprite.userData.baseScale = sprite.scale.clone();
   mesh.add(sprite);
   mesh.userData.characterLabel = sprite;
   characterLabels.push(sprite);
+}
+
+function updateNameplates() {
+  if (!three) return;
+  const world = new THREE.Vector3();
+  const worldPerPixel = 2 * Math.tan(THREE.MathUtils.degToRad(three.camera.fov) / 2) / Math.max(1,viewport.clientHeight);
+  for (const label of characterLabels) {
+    const head = label.userData.sourceHead;
+    if (!head) continue;
+    const part = head.userData.part;
+    head.getWorldPosition(world);
+    const distance = three.camera.position.distanceTo(world);
+    label.visible = dbg.playerLabelsOn && part.showName !== false && distance <= toNum(part.nameDisplayDistance,100);
+    if (!label.visible) continue;
+    world.y += Math.max(0.5,toNum(part.size?.y,2) / 2) + 0.7;
+    label.position.copy(head.worldToLocal(world));
+    const base = label.userData.baseScale;
+    const scale = Math.min(1, 16 * (128 / 40) * distance * worldPerPixel / base.y);
+    label.scale.copy(base).multiplyScalar(scale);
+  }
 }
 
 function removeHeadLabel(mesh) {
@@ -2976,6 +3092,24 @@ function placeCam(parts) {
   three.controls.update();
 }
 
+function refreshHeadDecals(mesh) {
+  const part = mesh?.userData?.part;
+  if (!DecalGeometryClass || !mesh.userData.assetGeometryLoaded || !String(part?.meshId).endsWith('avatar/heads/head.mesh')) return;
+  mesh.geometry.computeBoundingBox();
+  const box = mesh.geometry.boundingBox, size = box.getSize(new THREE.Vector3());
+  mesh.updateWorldMatrix(true,false);
+  for (const plane of mesh.children) {
+    if (plane.userData?.decalFace !== 'Front') continue;
+    const center = box.getCenter(new THREE.Vector3()); center.z = box.min.z + size.z * 0.12;
+    center.applyMatrix4(mesh.matrixWorld);
+    const projected = new DecalGeometryClass(mesh,center,mesh.rotation,new THREE.Vector3(size.x * 0.94,size.y * 0.94,size.z * 0.65));
+    projected.applyMatrix4(new THREE.Matrix4().copy(mesh.matrixWorld).invert());
+    plane.geometry.dispose(); plane.geometry = projected;
+    plane.position.set(0,0,0); plane.rotation.set(0,0,0);
+    plane.material.polygonOffset = true; plane.material.polygonOffsetFactor = -2; plane.material.polygonOffsetUnits = -2;
+  }
+}
+
 function addDecal(decal, fallbackPart, version) {
   if (!three) return;
   const part = partByPath.get(decal.partPath) || (curMode === "snap" ? fallbackPart : null);
@@ -2998,28 +3132,19 @@ function addDecal(decal, fallbackPart, version) {
   plane.position.copy(t.offset);
   plane.rotation.copy(t.rot);
   plane.userData.decalId = decalId;
+  plane.userData.decalFace = faceName(decal.face);
   part.add(plane);
   decalPlanes.push(plane);
   if (decalId) decalPlaneById.set(decalId, plane);
+  refreshHeadDecals(part);
 
-  const loader = new THREE.TextureLoader();
-  loader.load(
-    textureProxy(src),
-    (tex) => {
-      if (version !== renderVersion || !plane.parent) {
-        tex.dispose();
-        return;
-      }
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.anisotropy = three.renderer.capabilities.getMaxAnisotropy();
-      mat.map = tex;
-      mat.color.set("#ffffff");
-      mat.needsUpdate = true;
-      plane.visible = true;
-    },
-    undefined,
-    () => disposeDecalPlane(plane)
-  );
+  loadTexSrc(src, tex => {
+    if (!tex || version !== renderVersion || !plane.parent) return;
+    const decalTexture = tex.clone();
+    decalTexture.colorSpace = THREE.SRGBColorSpace;
+    decalTexture.anisotropy = three.renderer.capabilities.getMaxAnisotropy();
+    mat.map = decalTexture; mat.color.set("#ffffff"); mat.needsUpdate = true; plane.visible = true;
+  });
   return plane;
 }
 function disposeDecalPlane(plane) {
@@ -3112,6 +3237,10 @@ function drawSnap(snapshot, opt = {}) {
   renderVersion += 1;
   const version = renderVersion;
 
+  materialTextureCache.clear();
+  materialPbrMapCache.clear();
+  clothingTextureCache.clear();
+  assetLoads.beginScene();
   clearWorld();
 
   const parts = buildParts(snapshot);
@@ -3536,7 +3665,7 @@ async function loadServers() {
   for (const server of servers) {
     const option = document.createElement("option");
     option.value = server.serverId;
-    option.textContent = `${server.serverId} (${server.placeId ?? "sem placeId"})`;
+    option.textContent = `${server.serverId} (${server.placeId ?? "No place ID"})`;
     serverSelect.appendChild(option);
   }
 
@@ -3834,7 +3963,7 @@ async function syncThnt() {
     hideThnt();
     return;
   }
-  hintNth(sid);
+  hideThnt();
 }
 
 async function upThumb() {
@@ -3986,10 +4115,11 @@ function repSet(mesh, p, alpha = 1, src = null) {
     for (const mat of matArr) {
       if (!mat) continue;
       const tv = Math.max(0, Math.min(1, Number(tr || 0)));
-      mat.transparent = tv > 0 || Boolean(mat.map && mat.userData?.replayTexturePolicy?.mode === "blend");
+      const transparent = tv > 0 || Boolean(mat.map && mat.userData?.replayTexturePolicy?.mode === "blend");
+      if (mat.transparent !== transparent || mat.depthWrite !== !transparent) {
+        mat.transparent = transparent; mat.depthWrite = !transparent; mat.needsUpdate = true;
+      }
       mat.opacity = 1 - tv;
-      mat.depthWrite = !mat.transparent;
-      mat.needsUpdate = true;
     }
   }
   const clothingOpacity = 1 - Math.max(0, Math.min(1, Number(tr || 0)));
@@ -4001,6 +4131,8 @@ function repNeedGeo(a, b) {
   if (String(a.className || "") !== String(b.className || "")) return true;
   if (String(a.shape || "") !== String(b.shape || "")) return true;
   if (String(a.meshId || "") !== String(b.meshId || "")) return true;
+  if (String(a.meshType || "") !== String(b.meshType || "")) return true;
+  if (String(a.rigType || "") !== String(b.rigType || "")) return true;
   if (JSON.stringify(a.meshScale || null) !== JSON.stringify(b.meshScale || null)) return true;
   if (JSON.stringify(a.meshOffset || null) !== JSON.stringify(b.meshOffset || null)) return true;
   if (Number(a?.size?.x || 0) !== Number(b?.size?.x || 0)) return true;
@@ -4025,6 +4157,7 @@ function repDel(path) {
   const k = String(path || "");
   const mesh = partByPath.get(k);
   if (!mesh || !three) return;
+  if (mesh.userData.part?.lights?.length) replayLightsDirty = true;
   for (let i = decalPlanes.length - 1; i >= 0; i -= 1) {
     if (decalPlanes[i].parent === mesh) disposeDecalPlane(decalPlanes[i]);
   }
@@ -4051,6 +4184,7 @@ function repDel(path) {
 
 function repAdd(p, idx) {
   if (!p || !three) return;
+  if (p.lights?.length) replayLightsDirty = true;
   const k = String(p.path || "");
   if (!k) return;
   if (partByPath.has(k)) {
@@ -4129,6 +4263,7 @@ function repUpd(p, idx, old) {
     applyMatTex(mesh, p, v);
   }
   const previousPart = mesh.userData.part;
+  if (JSON.stringify(previousPart?.lights) !== JSON.stringify(p.lights)) replayLightsDirty = true;
   mesh.userData.part = p;
   if (previousPart?.characterName !== p.characterName || previousPart?.name !== p.name) {
     removeHeadLabel(mesh);
@@ -4143,6 +4278,7 @@ function repBuild(cam = false) {
   drawSnap(snap, { cam });
   renderDecalList(snap.decals);
   repDecalsPanelDirty = false;
+  replayLightsDirty = false;
   repCam = false;
 }
 
@@ -4220,6 +4356,7 @@ function repDraw(force = false) {
   repInterpolatedPaths.clear();
   repLrpToNext();
   applyRecordedCamera();
+  if (replayLightsDirty) { addLights(repSnapRaw()); replayLightsDirty = false; }
   repMeta();
   repChatDraw();
   repUiSync();
@@ -4454,6 +4591,7 @@ function onResize() {
   three.renderer.setSize(w, h);
   if (three.composer?.setSize) three.composer.setSize(w, h);
   if (three.bloom?.setSize) three.bloom.setSize(w, h);
+  if (three.post) three.post.uniforms.resolution.value.set(w, h);
   three.camera.aspect = w / h;
   three.camera.updateProjectionMatrix();
 }
@@ -4545,7 +4683,7 @@ function setSidebarOpen(open) {
   viewerSidebar.inert = !next;
   sidebarToggleBtn.setAttribute("aria-expanded", String(next));
   if (next) sidebarCloseBtn?.focus({ preventScroll: true });
-  else if (wasOpen && sidebarToggleBtn.style.display !== "none") sidebarToggleBtn.focus({ preventScroll: true });
+  else if (wasOpen) document.getElementById("viewerMenuBtn")?.focus({ preventScroll: true });
 }
 
 function setSidebarView(view) {
@@ -4564,13 +4702,22 @@ function syncLibraryTabs() {
   }
 }
 
+function setViewerMenuOpen(open) {
+  const menu = document.getElementById("viewerMenu");
+  const button = document.getElementById("viewerMenuBtn");
+  if (!menu || !button) return;
+  menu.hidden = !open;
+  button.setAttribute("aria-expanded", String(open));
+  if (!open) { setDebugMenuOpen(false); setSettingsMenuOpen(false); }
+}
+
 function updateTopbarMode() {
   const viewerOpen = viewerSection && viewerSection.style.display !== "none";
   document.body.classList.toggle("is-viewer", Boolean(viewerOpen));
   const mobileToolsBtn = document.getElementById("mobileToolsBtn");
   if (sidebarToggleBtn) sidebarToggleBtn.style.display = viewerOpen ? "" : "none";
   if (mobileToolsBtn) mobileToolsBtn.style.display = viewerOpen ? "" : "none";
-  if (!viewerOpen) setMobileToolsOpen(false);
+  if (!viewerOpen) { setMobileToolsOpen(false); setViewerMenuOpen(false); }
   if (refreshBtn) refreshBtn.style.display = viewerOpen ? "none" : "";
   if (homeBtn) homeBtn.style.display = viewerOpen ? "" : "none";
   if (shareBtn) shareBtn.style.display = viewerOpen ? "" : "none";
@@ -4659,6 +4806,14 @@ function wireDebugMenu() {
       apShMode();
     });
   }
+  document.getElementById("dbgSmoothLighting")?.addEventListener("change", event => {
+    dbg.smoothLighting = event.target.checked;
+    for (const mesh of partMeshes) {
+      for (const mat of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        mat.flatShading = !dbg.smoothLighting; mat.needsUpdate = true;
+      }
+    }
+  });
   if (dbgSmoothShadows) {
     dbgSmoothShadows.addEventListener("change", () => {
       dbg.smoothShadows = Boolean(dbgSmoothShadows.checked);
@@ -4712,12 +4867,7 @@ function wireDebugMenu() {
     dbgMeshBoxes.addEventListener("change", async () => {
       dbg.meshBoxesOn = Boolean(dbgMeshBoxes.checked);
       applyMeshSphereMode();
-      if (dbg.meshBoxesOn && latestSnapshot) {
-        try {
-          await loadSnapshot();
-        } catch {
-        }
-      }
+      if (dbg.meshBoxesOn) assetLoads.retryFailed();
     });
   }
   if (dbgTexPathLabels) {
@@ -4862,6 +5012,7 @@ if (downloadSnapshotBtn) {
 
 if (saveThumbnailBtn) {
   saveThumbnailBtn.addEventListener("click", async () => {
+    setViewerMenuOpen(false);
     saveThumbnailBtn.disabled = true;
     try {
       await upThumb();
@@ -4874,6 +5025,7 @@ if (saveThumbnailBtn) {
 if (shareBtn) {
   shareBtn.style.pointerEvents = "auto";
   shareBtn.addEventListener("click", () => {
+    setViewerMenuOpen(false);
     const dialog = document.getElementById("shareDialog");
     const offline = globalThis.__REPLAY_OFFLINE__;
     document.getElementById("shareLinkBtn").disabled = Boolean(offline);
@@ -4999,6 +5151,13 @@ if (homeBtn) {
   });
 }
 
+document.getElementById("viewerMenuBtn")?.addEventListener("click", () => {
+  setViewerMenuOpen(document.getElementById("viewerMenu").hidden);
+});
+document.addEventListener("click", event => {
+  const menu = document.getElementById("viewerMenu");
+  if (menu && !menu.hidden && !menu.contains(event.target) && !document.getElementById("viewerMenuBtn")?.contains(event.target)) setViewerMenuOpen(false);
+});
 document.getElementById("mobileToolsBtn")?.addEventListener("click", () => {
   const tools = document.getElementById("toolbarExtras");
   setMobileToolsOpen(!tools?.classList.contains("is-open"));
@@ -5006,11 +5165,13 @@ document.getElementById("mobileToolsBtn")?.addEventListener("click", () => {
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     setMobileToolsOpen(false);
+    setViewerMenuOpen(false);
     setSidebarOpen(false);
   }
 });
 
 sidebarToggleBtn?.addEventListener("click", () => {
+  setViewerMenuOpen(false);
   setSidebarOpen(!document.body.classList.contains("sidebar-open"));
 });
 sidebarCloseBtn?.addEventListener("click", () => setSidebarOpen(false));

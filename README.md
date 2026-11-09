@@ -36,11 +36,13 @@ Replays and snapshots are created under `web/data/`. The repository includes `cl
 
 ## Share and explore
 
-Open a capture and choose **Share** to copy a server link or download a single offline HTML file with the viewer, capture, meshes, and textures. If assets cannot be included, review the list and choose **Export anyway** or close to cancel. The missing-asset list stays in the exported file. Open the HTML in a browser with WebGL and import-map support; no Replay Mod server is required for playback.
+Open a capture and choose **Menu → Share** to copy a server link or download a single offline HTML file with the viewer, capture, meshes, and textures. If assets cannot be included, review the list and choose **Export anyway** or close to cancel. The missing-asset list stays in the exported file. Open the HTML in a browser with WebGL and import-map support; no Replay Mod server is required for playback.
 
 Replay cards show the configured TPS in a colored corner badge. The initial camera appears near a visible player, falling back to a scene part. New captures include player health for this choice; older captures use visible loaded players. The recorder samples players' limbs together each tick, and playback uses Roblox's YXZ rotation order with quaternion interpolation. This is not yet a full Motor6D rig reconstruction.
 
 The terminal offers to create and unlock the encrypted `auth.lzk8` file for Roblox session access. See [setup](docs/setup.md#roblox-session-credential) and [operations](docs/operacao.md) for credentials, diagnostic logs, and offline export limitations.
+
+The viewer starts with its menu collapsed. Use **Menu → Explorer** to inspect objects and **Menu → Save scene thumbnail** to capture a thumbnail. Loading shows mesh/texture progress, retries failed assets twice, and offers **Retry failed assets** without reloading successful assets. Offline export makes three attempts before listing failures. R6 SpecialMesh heads and smaller text-only nameplates are supported. See the [renderer compatibility guide](docs/rendering.md) for lighting properties, post effects, and the differences from Roblox's engine.
 
 ## Develop and verify
 

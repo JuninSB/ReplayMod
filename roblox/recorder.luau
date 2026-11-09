@@ -237,7 +237,7 @@ local function api(path, payload, token)
     end)
     diagnostic("HttpPost fallback " .. (fallbackOk and "returned" or "failed"))
     if not fallbackOk or type(fallbackBody) ~= "string" then
-        error("POST local falhou: " .. tostring(response) .. " / " .. tostring(fallbackBody))
+        error("Local POST failed: " .. tostring(response) .. " / " .. tostring(fallbackBody))
     end
     local decodedOk, data = pcall(function() return hs:JSONDecode(fallbackBody) end)
     if not decodedOk or type(data) ~= "table" then error("HttpPost: " .. fallbackBody:sub(1, 180)) end
@@ -309,22 +309,24 @@ local function addMoving(inst)
     table.insert(moving, inst)
 end
 local function watchGraphic(inst)
-    if graphicsWatch[inst] or not (inst:IsA("SpecialMesh") or inst:IsA("SurfaceAppearance")) then return end
+    if graphicsWatch[inst] or not (inst:IsA("SpecialMesh") or inst:IsA("SurfaceAppearance") or inst:IsA("Light")) then return end
     local parent = inst.Parent
+    if parent and parent:IsA("Attachment") then parent = parent.Parent end
     if not parent or not parent:IsA("BasePart") or not tracked[parent] then return end
+    if recording then mark(parent, "full") end
     graphicsWatch[inst] = inst.Changed:Connect(function()
         if tracked[parent] and (recording or preparing) then mark(parent, "full") end
     end)
 end
 local function isClothing(inst)
-    return inst:IsA("Shirt") or inst:IsA("Pants") or inst:IsA("ShirtGraphic")
+    return inst:IsA("Shirt") or inst:IsA("Pants") or inst:IsA("ShirtGraphic") or inst:IsA("CharacterMesh")
 end
 local function markClothedParts(model)
     if not model or not model:IsA("Model") or not model:FindFirstChildOfClass("Humanoid") then return end
     for _, child in ipairs(model:GetChildren()) do
         if tracked[child] and child:IsA("BasePart") then
             local name = child.Name
-            if name == "Torso" or name == "UpperTorso" or name == "LowerTorso"
+            if name == "Head" or name == "Torso" or name == "UpperTorso" or name == "LowerTorso"
                 or name:match("Arm$") or name:match("Hand$")
                 or name:match("Leg$") or name:match("Foot$") then
                 mark(child, "full")
@@ -352,6 +354,7 @@ local function track(inst, initial)
     local surface = inst:FindFirstChildOfClass("SurfaceAppearance")
     if special then watchGraphic(special) end
     if surface then watchGraphic(surface) end
+    for _, child in ipairs(inst:GetDescendants()) do if child:IsA("Light") then watchGraphic(child) end end
     if not inst.Anchored then addMoving(inst) end
     if initial then
         local ok, data = pcall(partData, inst, id)
@@ -389,7 +392,7 @@ tickButton.Activated:Connect(function()
         statsAt, statsSamples = os.clock(), 0
         nextSampleAt = os.clock() + 1 / captureFps
     end
-    status.Text = tostring(captureFps) .. " ticks/s" .. (captureFps == 60 and " · pode reduzir FPS" or "")
+    status.Text = tostring(captureFps) .. " ticks/s" .. (captureFps == 60 and " · may reduce game FPS" or "")
 end)
 local userInput = game:GetService("UserInputService")
 local dragInput, dragStart, panelStart = nil, nil, nil
@@ -455,13 +458,18 @@ local function readLighting()
         environmentSpecularScale = lg.EnvironmentSpecularScale,
         shadowSoftness = lg.ShadowSoftness, geographicLatitude = lg.GeographicLatitude,
     }
+    for _, property in ipairs({"LightingStyle", "PrioritizeLightingQuality", "Technology", "ExtendLightRangeTo120"}) do
+        local okRead, value = pcall(function() return lg[property] end)
+        if okRead then data[property:sub(1,1):lower() .. property:sub(2)] = typeof(value) == "EnumItem" and tostring(value) or value end
+    end
+    data.timeOfDay = lg.TimeOfDay
     local ok, sun = pcall(function() return lg:GetSunDirection() end)
     if ok and sun then data.sunDirection = v3(sun) end
     local atmosphere = lg:FindFirstChildOfClass("Atmosphere")
     if atmosphere then
         data.atmosphere = {
             color = hex(atmosphere.Color), decay = hex(atmosphere.Decay),
-            density = atmosphere.Density, haze = atmosphere.Haze, glare = atmosphere.Glare,
+            density = atmosphere.Density, offset = atmosphere.Offset, haze = atmosphere.Haze, glare = atmosphere.Glare,
         }
     end
     local sky = lg:FindFirstChildOfClass("Sky")
@@ -475,8 +483,13 @@ local function readLighting()
             sunAngularSize = sky.SunAngularSize, moonAngularSize = sky.MoonAngularSize,
         }
     end
+    local clouds = workspace.Terrain:FindFirstChildOfClass("Clouds")
+    if clouds then data.clouds = {cover = clouds.Cover, density = clouds.Density, color = hex(clouds.Color), enabled = clouds.Enabled} end
     local effects = {}
-    for _, effect in ipairs(lg:GetChildren()) do
+    local effectSources = lg:GetChildren()
+    local camera = workspace.CurrentCamera
+    if camera then for _, effect in ipairs(camera:GetChildren()) do table.insert(effectSources, effect) end end
+    for _, effect in ipairs(effectSources) do
         if effect:IsA("BloomEffect") then
             table.insert(effects, {className = effect.ClassName, enabled = effect.Enabled,
                 intensity = effect.Intensity, size = effect.Size, threshold = effect.Threshold})
@@ -487,6 +500,13 @@ local function readLighting()
         elseif effect:IsA("SunRaysEffect") then
             table.insert(effects, {className = effect.ClassName, enabled = effect.Enabled,
                 intensity = effect.Intensity, spread = effect.Spread})
+        elseif effect:IsA("DepthOfFieldEffect") then
+            table.insert(effects, {className = effect.ClassName, enabled = effect.Enabled,
+                farIntensity = effect.FarIntensity, nearIntensity = effect.NearIntensity,
+                focusDistance = effect.FocusDistance, inFocusRadius = effect.InFocusRadius})
+        elseif effect.ClassName == "ColorGradingEffect" then
+            local okPreset, preset = pcall(function() return effect.TonemapperPreset end)
+            if okPreset then table.insert(effects, {className = effect.ClassName, enabled = effect.Enabled, tonemapperPreset = tostring(preset)}) end
         elseif effect:IsA("BlurEffect") then
             table.insert(effects, {className = effect.ClassName, enabled = effect.Enabled, size = effect.Size})
         end
@@ -530,7 +550,7 @@ local function partPatch(inst, id, props)
                 changed = true
             end
         end
-        for _, key in ipairs({"meshId", "textureId", "meshScale", "meshOffset", "surfaceAppearance", "characterName", "clothing"}) do
+        for _, key in ipairs({"meshId", "meshType", "rigType", "textureId", "meshScale", "meshOffset", "surfaceAppearance", "characterName", "clothing", "lights"}) do
             if data[key] == nil and prior[key] ~= nil then
                 local cleared = (key == "meshId" or key == "textureId" or key == "characterName") and "" or false
                 if not sameValue(prior[key], cleared) then
@@ -820,7 +840,7 @@ connections[#connections + 1] = workspace.DescendantAdded:Connect(function(inst)
     if inst:IsA("BasePart") then
         if preparing and not recording and captured then track(inst, true)
         elseif recording and (not paused or preparing) then track(inst, false) end
-    elseif inst:IsA("SpecialMesh") or inst:IsA("SurfaceAppearance") then
+    elseif inst:IsA("SpecialMesh") or inst:IsA("SurfaceAppearance") or inst:IsA("Light") then
         watchGraphic(inst)
         local parent = inst.Parent
         if parent and tracked[parent] and (recording or preparing) then mark(parent, "full") end
@@ -845,8 +865,9 @@ connections[#connections + 1] = workspace.DescendantRemoving:Connect(function(in
     if graphicsWatch[inst] then graphicsWatch[inst]:Disconnect(); graphicsWatch[inst] = nil end
     if clothingWatch[inst] then clothingWatch[inst]:Disconnect(); clothingWatch[inst] = nil end
     if isClothing(inst) and (recording or preparing) then markClothedParts(inst.Parent) end
-    if inst:IsA("SpecialMesh") or inst:IsA("SurfaceAppearance") then
+    if inst:IsA("SpecialMesh") or inst:IsA("SurfaceAppearance") or inst:IsA("Light") then
         local parent = inst.Parent
+        if parent and parent:IsA("Attachment") then parent = parent.Parent end
         if parent and tracked[parent] and (recording or preparing) then mark(parent, "full") end
     end
     if not tracked[inst] then return end

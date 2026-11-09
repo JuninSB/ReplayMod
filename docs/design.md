@@ -17,7 +17,7 @@ Replay Mod is a technical playback tool. The scene is the primary content, the l
 
 The library's **Replays** and **Snapshots** tabs show separate collections. When a capture opens, the canvas fills the viewport; the title and playback controls overlay the scene, while a collapsible sidebar contains **Explorer** and **Details**. The timeline adapts to narrow screens. Escape closes the sidebar, focus remains predictable, and the canvas stays full size.
 
-Touch controls use targets of at least 48 px. Dragging the scene rotates the camera. Explorer displays BaseParts and decals represented in the capture and updates while replaying or seeking; snapshots show the tree at capture time. It cannot display instances the recorder did not save. The recorder panel stays within screen bounds and can select 5, 10, 20, 30, or 60 ticks per second; 60 carries a performance warning. Playback supports pause/resume, seek, 5-second steps, recorded/free camera, and 0.25× to 4× speed.
+Touch controls use 48 px targets in the normal layout and compact 38 px targets in short landscape windows. Dragging the scene rotates the camera. Explorer displays BaseParts and decals represented in the capture and updates while replaying or seeking; snapshots show the tree at capture time. It cannot display instances the recorder did not save. The recorder panel stays within screen bounds and can select 5, 10, 20, 30, or 60 ticks per second; 60 carries a performance warning. Playback supports pause/resume, seek, 5-second steps, recorded/free camera, and 0.25× to 4× speed.
 
 The recorder saves supported global Lighting, Sky, Atmosphere, and effect properties; changes over time become replay events. The Three.js viewer approximates lighting, fog, shadows, sky, Bloom, ColorCorrection, and Blur. It is not the Roblox renderer, and captures do not yet preserve Dynamic Head facial skinning or every Sky asset.
 
@@ -30,3 +30,8 @@ Check the viewer at desktop and mobile widths, portrait and landscape, touch con
 ## Sharing and initial view
 
 Share opens a dialog with Copy link and Download offline HTML. Export progress and missing assets stay inside the dialog; users may explicitly export with missing assets or close to cancel. TPS badges use red at 5, green at 30, and blue at 60, with intermediate hues. Short landscape screens use a compact transport bar and movement controls. Initial camera placement prioritizes visible player heads with positive recorded health; captures without health use visible player heads, then a visible scene part. Browser/device verification remains required for the final scale and file-opening behavior.
+
+
+## Collapsed scene menu and loading
+
+The viewer header has one Menu button. Explorer, thumbnail capture, rendering settings, camera settings, sharing and library controls stay collapsed until opened. FPS appears separately below the header. Movement help is removed. Player nameplates use outlined text without a box, a maximum on-screen size and recorded distance limits. The loading panel reports meshes and textures, retains an expandable list of failures and retries only failed jobs. Successful resources are reused across scene rebuilds. See [rendering compatibility](rendering.md) for capture fields and approximations.

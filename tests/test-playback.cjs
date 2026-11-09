@@ -6,6 +6,35 @@ const { readFileSync } = require("node:fs");
 const { spawnSync } = require("node:child_process");
 const vm = require("node:vm");
 
+test("asset loading retries twice, shares successes and retries only failed jobs", async () => {
+  const { AssetLoads } = await import("../web/static/asset-loads.mjs");
+  const loads = new AssetLoads();
+  let good = 0, bad = 0, recovered = null;
+  loads.load('good','mesh', async () => { good++; return 'cached'; });
+  loads.load('bad','mesh', async () => { bad++; if (bad <= 2) throw Error('temporary'); return 'recovered'; }, {onValue:value => {recovered=value;}});
+  const settle = async () => { for(let i=0;i<50 && (loads.running || loads.queue.length);i++) await new Promise(resolve=>setTimeout(resolve,5)); };
+  await settle(); assert.equal(good,1); assert.equal(bad,2); assert.equal(loads.summary().failures.length,1);
+  loads.load('good','mesh',async()=>{throw Error('must not refetch');});
+  loads.retryFailed(); await settle();
+  assert.equal(good,1); assert.equal(bad,3); assert.equal(recovered,'recovered'); assert.equal(loads.summary().failures.length,0);
+});
+
+test("offline assets get three attempts before failure is reported", async () => {
+  const {readAssetWithRetry}=await import('../web/static/offline-export.mjs');
+  let calls=0;
+  const asset=await readAssetWithRetry('/asset',async()=>{calls++;return calls<3 ? new Response('',{status:503}) : new Response('ok');});
+  assert.equal(calls,3); assert.equal(new TextDecoder().decode(asset.bytes),'ok');
+  calls=0; await assert.rejects(readAssetWithRetry('/asset',async()=>{calls++;throw Error('offline');})); assert.equal(calls,3);
+});
+
+test("R6 heads preserve SpecialMesh shape and ordinary heads stay blocks", async () => {
+  const {normalizePart}=await import('../web/static/scene-data.mjs');
+  const raw={name:'Head',className:'Part',position:{x:0,y:2,z:0},size:{x:2,y:1,z:1}};
+  assert.equal(normalizePart(raw).meshId,'');
+  assert.equal(normalizePart({...raw,meshType:'Enum.MeshType.Head',meshScale:{x:1.25,y:1.25,z:1.25}}).meshId,'rbxasset://avatar/heads/head.mesh');
+  assert.equal(normalizePart({...raw,meshId:'rbxassetid://custom'}).meshId,'rbxassetid://custom');
+});
+
 test("initial camera prefers a living visible player, then a loaded part", async () => {
   const { chooseSpawnTarget } = await import("../web/static/camera-spawn.mjs");
   const part = {position:{x:5000,y:0,z:0},userData:{part:{name:"Floor"}}};
@@ -39,6 +68,9 @@ test("recorded YXZ orientation keeps the limb rotation axes correct", () => {
   vm.runInContext('repSet(mesh, {position:{}, orientation:{x:90,y:90,z:0}})', context);
   const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(context.mesh.quaternion);
   assert.ok(direction.distanceTo(new THREE.Vector3(0, -1, 0)) < 1e-8);
+  const version = context.mesh.material.version;
+  vm.runInContext('repSet(mesh, {position:{x:1}, orientation:{x:90,y:90,z:0}})', context);
+  assert.equal(context.mesh.material.version, version, "moving a part must not recompile its material");
 });
 
 test("viewer parses as the browser ES module", () => {

@@ -977,19 +977,40 @@ body.sidebar-open .replay-bar {
     padding: 5px 7px;
     font-size: 11px;
   }
-  body.is-viewer .speed-label { font-size: 0; }
-  body.is-viewer .replay-time { font-size: 10px; min-width: 80px; }
+  body.is-viewer .speed-label {
+    font-size: 0;
+  }
+  body.is-viewer .replay-time {
+    font-size: 10px;
+    min-width: 80px;
+  }
   body.is-viewer .touch-controls {
     grid-template-columns: repeat(3, 38px);
     grid-template-rows: repeat(3, 38px);
     gap: 4px;
     bottom: 65px;
   }
-  body.is-viewer .touch-controls button { min-width: 38px; min-height: 38px; padding: 0; font-size: 20px; }
-  body.is-viewer .camera-help { display: none; }
-  body.is-viewer .toolbar-extras.is-open { left: auto; width: min(300px, calc(100vw - 20px)); }
-  body.is-viewer .debug-menu { width: min(280px, calc(100vw - 24px)); font-size: 11px; }
-  body.is-viewer .debug-item { padding: 7px; gap: 7px; }
+  body.is-viewer .touch-controls button {
+    min-width: 38px;
+    min-height: 38px;
+    padding: 0;
+    font-size: 20px;
+  }
+  body.is-viewer .camera-help {
+    display: none;
+  }
+  body.is-viewer .toolbar-extras.is-open {
+    left: auto;
+    width: min(300px, calc(100vw - 20px));
+  }
+  body.is-viewer .debug-menu {
+    width: min(280px, calc(100vw - 24px));
+    font-size: 11px;
+  }
+  body.is-viewer .debug-item {
+    padding: 7px;
+    gap: 7px;
+  }
 }
 
 .share-dialog {
@@ -1002,9 +1023,152 @@ body.sidebar-open .replay-bar {
   color: var(--text);
   padding: 20px;
 }
-.share-dialog::backdrop { background: #000a; }
-.share-dialog h2 { margin: 0 0 10px; font-size: 20px; }
-.share-dialog p { color: var(--muted); line-height: 1.5; }
-.share-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.share-missing { max-height: 180px; overflow: auto; overflow-wrap: anywhere; font-size: 12px; }
-#continueOfflineBtn[hidden] { display: none; }
+.share-dialog::backdrop {
+  background: #000a;
+}
+.share-dialog h2 {
+  margin: 0 0 10px;
+  font-size: 20px;
+}
+.share-dialog p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+.share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.share-missing {
+  max-height: 180px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+#continueOfflineBtn[hidden] {
+  display: none;
+}
+
+/* One collapsed menu keeps the scene and frame counter clear. */
+body.is-viewer .topbar {
+  min-height: 44px;
+  padding: 6px 10px;
+  pointer-events: none;
+}
+body.is-viewer .topbar button,
+body.is-viewer .viewer-menu {
+  pointer-events: auto;
+}
+body.is-viewer #viewerMenuBtn {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+}
+body.is-viewer .viewer-menu {
+  position: absolute;
+  top: 48px;
+  right: 10px;
+  width: min(300px, calc(100vw - 20px));
+  max-height: calc(100dvh - 66px);
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  background: #171c23f7;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 10px;
+}
+body.is-viewer .viewer-menu[hidden] {
+  display: none;
+}
+body.is-viewer .viewer-menu #mobileToolsBtn {
+  display: none !important;
+}
+body.is-viewer .viewer-menu #toolbarExtras {
+  display: contents !important;
+}
+body.is-viewer .viewer-menu #sidebarToggleBtn {
+  display: block;
+}
+body.is-viewer .viewer-menu #serverSelect,
+body.is-viewer .viewer-menu label[for="serverSelect"] {
+  display: none;
+}
+body.is-viewer .viewer-menu .server-select-wrap {
+  grid-column: 1 / -1;
+}
+body.is-viewer .viewer-menu #modeSelect {
+  width: 100%;
+  max-width: none;
+}
+body.is-viewer .viewer-menu button {
+  width: 100%;
+  min-height: 38px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+body.is-viewer .viewer-menu .debug-menu {
+  position: fixed;
+  top: 48px;
+  right: min(320px, calc(100vw - 292px));
+  width: min(280px, calc(100vw - 20px));
+  max-height: calc(100dvh - 64px);
+}
+@media (max-width: 600px) {
+  body.is-viewer .viewer-menu .debug-menu {
+    right: 10px;
+  }
+}
+body.is-viewer .camera-help {
+  display: none !important;
+}
+#fpsOverlay {
+  top: 54px !important;
+  right: auto !important;
+  left: 12px !important;
+  z-index: 6 !important;
+  font-size: 11px !important;
+}
+.asset-progress {
+  position: absolute;
+  top: 54px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(340px, calc(100% - 32px));
+  max-height: min(260px, 60dvh);
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #171c23ed;
+  color: var(--text);
+  font-size: 12px;
+  z-index: 8;
+}
+.asset-progress[hidden] {
+  display: none;
+}
+.asset-progress progress {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--accent);
+  margin: 7px 0;
+}
+.asset-progress ul {
+  font-size: 11px;
+  padding-left: 16px;
+  overflow-wrap: anywhere;
+}
+#assetCounts {
+  color: var(--muted);
+  margin-top: 4px;
+}
+#assetRetry {
+  min-height: 34px;
+  font-size: 12px;
+}
+#assetRetry[hidden],
+#assetFailureDetails[hidden] {
+  display: none;
+}

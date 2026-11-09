@@ -106,7 +106,12 @@ local function partData(p, stablePath)
     local characterName = characterNameOf(p)
     if characterName then
         data.characterName = characterName
-        data.characterHealth = p.Parent:FindFirstChildOfClass("Humanoid").Health
+        local humanoid = p.Parent:FindFirstChildOfClass("Humanoid")
+        data.characterHealth = humanoid.Health
+        data.nameDisplayDistance = humanoid.NameDisplayDistance
+        data.showName = humanoid.DisplayDistanceType ~= Enum.HumanoidDisplayDistanceType.None
+        local owner = ps:GetPlayerFromCharacter(p.Parent)
+        if owner then data.characterName = owner.DisplayName end
     end
     if p:IsA("Part") then
         data.shape = tostring(p.Shape)
@@ -124,6 +129,7 @@ local function partData(p, stablePath)
     end
     local special = p:FindFirstChildOfClass("SpecialMesh")
     if special then
+        data.meshType = tostring(special.MeshType)
         data.meshId = tostring(special.MeshId)
         data.textureId = tostring(special.TextureId)
         data.meshScale = v3(special.Scale)
@@ -141,6 +147,17 @@ local function partData(p, stablePath)
     end
     local model = p.Parent
     if model and model:IsA("Model") and model:FindFirstChildOfClass("Humanoid") then
+        data.rigType = tostring(model:FindFirstChildOfClass("Humanoid").RigType)
+        if not data.meshId or data.meshId == "" then
+            local bodyNames = {Torso = "Torso", ["Left Arm"] = "LeftArm", ["Right Arm"] = "RightArm", ["Left Leg"] = "LeftLeg", ["Right Leg"] = "RightLeg", Head = "Head"}
+            for _, child in ipairs(model:GetChildren()) do
+                if child:IsA("CharacterMesh") and child.BodyPart.Name == bodyNames[p.Name] and child.MeshId ~= 0 then
+                    data.meshId = "rbxassetid://" .. tostring(child.MeshId)
+                    if child.BaseTextureId ~= 0 then data.textureId = "rbxassetid://" .. tostring(child.BaseTextureId) end
+                    break
+                end
+            end
+        end
         local name = p.Name
         local torso = name == "Torso" or name == "UpperTorso" or name == "LowerTorso"
         local arm = name:match("Arm$") ~= nil or name:match("Hand$") ~= nil
@@ -165,6 +182,16 @@ local function partData(p, stablePath)
             if next(clothing) then data.clothing = clothing end
         end
     end
+    local lights = {}
+    for _, light in ipairs(p:GetDescendants()) do
+        if light:IsA("PointLight") or light:IsA("SpotLight") or light:IsA("SurfaceLight") then
+            local row = {className = light.ClassName, enabled = light.Enabled, color = hex(light.Color), brightness = light.Brightness, range = light.Range, shadows = light.Shadows}
+            if not light:IsA("PointLight") then row.angle = light.Angle; row.face = tostring(light.Face) end
+            if light.Parent:IsA("Attachment") then row.position = v3(light.Parent.Position); row.orientation = v3(light.Parent.Orientation) end
+            table.insert(lights, row)
+        end
+    end
+    if #lights > 0 then data.lights = lights end
     return data
 end
 
