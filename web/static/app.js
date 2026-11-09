@@ -6,6 +6,7 @@ import { buildTerrainGeometries } from "./terrain-mesh.mjs";
 import { ReplayTimeline } from "./replay-timeline.mjs";
 import { joystickVector } from "./touch-joystick.mjs";
 import { ReplayAudio } from "./replay-audio.mjs";
+import { ScreenGuiView } from "./screen-gui.mjs";
 import { applyViewerOverrides } from "./viewer-overrides.mjs";
 import { downloadOffline, offlineCaptureRow } from "./offline-export.mjs?v=offline-3";
 import { toNum, toVec3, readAny, normalizePart, faceName, visibleDecalTexture, isCharHead, textureProxy, textureFetchUrl, meshProxy, usesBoxFaceMaterials } from "./scene-data.mjs?v=render-20261109-2";
@@ -58,6 +59,7 @@ const snapshotMeta = document.getElementById("snapshotMeta");
 const lightingData = document.getElementById("lightingData");
 const decalsData = document.getElementById("decalsData");
 const viewport = document.getElementById("serverViewport");
+const screenGuiView = new ScreenGuiView(document.getElementById("screenGuiOverlay"), textureProxy);
 const landingView = document.getElementById("landingView");
 const viewerSection = document.getElementById("viewerSection");
 const serverCards = document.getElementById("serverCards");
@@ -4115,6 +4117,7 @@ async function loadList() {
 
 function showLanding() {
   replayAudio?.dispose();
+  screenGuiView.render(null);
   sceneLoad += 1;
   displayedSceneKey = "";
   cancelAnimationFrame(repAnimation);
@@ -4782,6 +4785,7 @@ function repSeek(ms, force = false) {
   if (!repDat) return;
   repMs = repDat.seek(ms, {
     onReset() {
+      screenGuiView.render(repDat.screenGui);
       repMap = repDat.map;
       resetReplayDecalIndex();
       replayExplorerDirty = true;
@@ -4794,6 +4798,7 @@ function repSeek(ms, force = false) {
       else if (change.type === "remove") repDel(change.path);
       else if (change.type === "decal-add" || change.type === "decal-update") repDecalUpsert(change.decal);
       else if (change.type === "decal-remove") repDecalRemove(change.id);
+      else if (change.type === "screen-gui") screenGuiView.render(change.screenGui);
       else if (change.type === "lighting") {
         latestSnapshot = repSnapRaw();
         syncLight(latestSnapshot);
@@ -4837,6 +4842,7 @@ function repLoad(raw) {
   repChatRenderedData = null;
   repChatRenderedCount = -1;
   repDat = new ReplayTimeline(raw, normalizePart);
+  screenGuiView.render(repDat.screenGui);
   resetReplayDecalIndex();
   const cameraButton = document.getElementById("replayCamera");
   if (cameraButton) cameraButton.disabled = repDat.cameraFrames.length === 0;
@@ -4972,6 +4978,7 @@ async function loadSnapshot() {
 
   const snapshot = await res.json();
   if (loadId !== sceneLoad || curMode !== "snap") return;
+  screenGuiView.render(snapshot.screenGui || null);
   viewerOverrides.clear();
   const resetEdits = document.getElementById('resetViewerEdits');
   if (resetEdits) resetEdits.hidden = true;
@@ -5002,6 +5009,7 @@ async function loadSnapshot() {
 }
 
 function onResize() {
+  screenGuiView.resize();
   if (!three) return;
   const w = Math.max(320, viewport.clientWidth);
   const h = Math.max(220, viewport.clientHeight);
@@ -5694,6 +5702,12 @@ for (const kind of [2, 3]) {
     event.currentTarget.textContent = `${kind}D audio ${replayAudioEnabled[kind] ? 'on' : 'off'}`;
   });
 }
+document.getElementById('screenGuiToggleBtn')?.addEventListener('click', event => {
+  const enabled = event.currentTarget.getAttribute('aria-pressed') !== 'true';
+  screenGuiView.setEnabled(enabled);
+  event.currentTarget.setAttribute('aria-pressed', String(enabled));
+  event.currentTarget.textContent = enabled ? 'Game UI on' : 'Game UI off';
+});
 document.getElementById("replayBack")?.addEventListener("click", () => repSeek(repMs - 5000, true));
 replayForward?.addEventListener("click", () => repSeek(repMs + 5000, true));
 const touchMovementSelect = document.getElementById('touchMovement');

@@ -48,6 +48,8 @@ The viewer starts with its menu collapsed. Use **Menu → Rendering** to adjust 
 
 New recordings can include observed sounds, world text and child instances. Explorer lets you temporarily edit supported part and sound properties while replaying or seeking; **Reset viewer edits** restores the recorded values. These edits do not change the recording or the game. Choose touch arrows or joystick under **Menu → Camera**. Older recordings cannot recover information that was not captured.
 
+New recordings also sample the local player's game interface. **Menu → Game UI** displays it during playback; it starts hidden and excludes the recorder. The reconstruction is visual and has compatibility limits described in the [renderer guide](docs/rendering.md).
+
 The viewer uses Three.js r187 and requires a browser with WebGL 2.
 
 ## Develop and verify

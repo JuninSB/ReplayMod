@@ -346,6 +346,7 @@ test("Node server accepts chunked replays and enforces local authentication", as
       stepMs: 1000 / 60,
       base: {
         parts: [],
+        screenGui: { width: 800, height: 600, screens: [{ items: [{ text: 'Hello' }] }] },
         terrain: {
           cellSize: 4,
           origin: { x: 0, y: 0, z: 0 },
@@ -353,7 +354,7 @@ test("Node server accepts chunked replays and enforces local authentication", as
         },
       },
       durationMs: 200,
-      frames: [{ t: 200, a: [], u: [], d: [] }],
+      frames: [{ t: 200, a: [], u: [], d: [], screenGui: { width: 800, height: 600, screens: [] } }],
       soundEvents: [{ t: 50, id: 'sound_1', event: 'play', soundId: 'rbxasset://sounds/test.ogg', playing: true, timePosition: 0, volume: 0.5, playbackSpeed: 1.2, spatial: true, partPath: 'part_1' }],
     };
     const serialized = JSON.stringify(replay);
@@ -380,6 +381,8 @@ test("Node server accepts chunked replays and enforces local authentication", as
       await fetch(base + "/api/replay/latest?replayId=test-replay")
     ).json();
     assert.equal(loaded.frames.length, 1);
+    assert.equal(loaded.base.screenGui.screens[0].items[0].text, 'Hello');
+    assert.deepEqual(loaded.frames[0].screenGui.screens, []);
     assert.equal(loaded.soundEvents[0].playbackSpeed, 1.2);
     assert.equal(loaded.base.terrain.cells[0].m, "Pebble");
     const library = await (await fetch(base + "/api/replays")).json();

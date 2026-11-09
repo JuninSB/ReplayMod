@@ -78,6 +78,7 @@
         <button id="assetStatusBtn" type="button" hidden>Loading status</button>
         <button id="audio2dToggleBtn" type="button" aria-pressed="true">2D audio on</button>
         <button id="audio3dToggleBtn" type="button" aria-pressed="true">3D audio on</button>
+        <button id="screenGuiToggleBtn" type="button" aria-pressed="false">Game UI off</button>
         <p id="audioStatus" class="audio-status" role="status"></p>
         <button id="hideUiBtn" type="button">Hide UI</button>
         <div class="viewer-menu-heading">Settings &amp; sharing</div>
@@ -271,6 +272,7 @@
     <main id="viewerSection" class="main-layout" style="display: none">
       <section class="viewport-window">
         <div id="serverViewport">
+          <div id="screenGuiOverlay" class="recorded-screen-gui" aria-hidden="true" hidden></div>
           <div class="touch-controls" role="group" aria-label="Camera movement">
             <button type="button" data-move="KeyW" aria-label="Forward">
               ↑

@@ -1098,6 +1098,13 @@ body.is-viewer .viewer-menu-heading {
   padding: 4px 2px 0;
 }
 body.is-viewer .audio-status { grid-column: 1 / -1; margin: 0; color: #f2b5a6; font-size: 12px; overflow-wrap: anywhere; }
+.recorded-screen-gui { position: absolute; inset: 0; z-index: 2; overflow: hidden; pointer-events: none; }
+.recorded-screen-gui[hidden] { display: none; }
+.recorded-screen-gui-surface { position: absolute; top: 0; left: 0; transform-origin: top left; pointer-events: none; }
+.recorded-screen-gui-screen { position: absolute; inset: 0; pointer-events: none; }
+.recorded-screen-gui-object { position: absolute; box-sizing: border-box; transform-origin: center; pointer-events: none; }
+.recorded-screen-gui-image, .recorded-screen-gui-text { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: inherit; pointer-events: none; }
+.recorded-screen-gui-text { display: flex; overflow: hidden; line-height: 1.1; }
 body.is-viewer .viewer-menu #mobileToolsBtn {
   display: none !important;
 }

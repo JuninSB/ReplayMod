@@ -6,7 +6,9 @@ export class ReplayTimeline {
     this.map = new Map();
     this.decalMap = new Map();
     this.baseLighting = this.raw.base?.lighting || this.raw.lighting || {};
+    this.baseScreenGui = this.raw.base?.screenGui || null;
     this.lighting = this.baseLighting;
+    this.screenGui = this.baseScreenGui;
     this.base = [];
     this.baseDecals = [];
     const baseParts = Array.isArray(this.raw.base?.parts)
@@ -97,10 +99,15 @@ export class ReplayTimeline {
     this.lastFrameTime = 0;
     this.ms = 0;
     this.lighting = this.baseLighting;
+    this.screenGui = this.baseScreenGui;
   }
 
   applyFrame(frame, onChange = () => {}) {
     if (!frame || typeof frame !== "object") return;
+    if (frame.screenGui && typeof frame.screenGui === "object") {
+      this.screenGui = frame.screenGui;
+      onChange({ type: "screen-gui", screenGui: this.screenGui });
+    }
     if (frame.lighting && typeof frame.lighting === "object") {
       this.lighting = frame.lighting;
       onChange({ type: "lighting", lighting: this.lighting });

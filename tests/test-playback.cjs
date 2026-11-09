@@ -25,6 +25,20 @@ test("world text survives replay updates and can be cleared", async () => {
   assert.deepEqual(timeline.map.get('sign').textElements, []);
 });
 
+test("ScreenGui state follows replay frames and backward seeking", async () => {
+  const { ReplayTimeline } = await import('../web/static/replay-timeline.mjs');
+  const first = { width: 800, height: 600, screens: [{ items: [{ text: 'Before', texture: 'rbxassetid://123' }] }] };
+  const second = { width: 800, height: 600, screens: [{ items: [{ text: 'After' }] }] };
+  const timeline = new ReplayTimeline({ base: { parts: [], screenGui: first }, durationMs: 200, frames: [{ t: 100, screenGui: second }] }, x => x);
+  assert.equal(timeline.screenGui, first);
+  timeline.seek(100);
+  assert.equal(timeline.screenGui, second);
+  timeline.seek(0);
+  assert.equal(timeline.screenGui, first);
+  const { captureAssets } = await import('../web/static/offline-export.mjs');
+  assert.ok(captureAssets({ base: { screenGui: first } }).required.has('/api/asset/texture?src=rbxassetid%3A%2F%2F123'));
+});
+
 test("sound events reconstruct seek position, looping and stopping", async () => {
   const { ReplayAudio, soundStatesAt, soundOffsetAt } = await import('../web/static/replay-audio.mjs');
   const events = [
@@ -204,6 +218,7 @@ test("offline export includes the complete viewer module graph and capture asset
   const modules = await collectModules("/static/app.js", file => Promise.resolve(readFileSync(path.join(__dirname, "../web", file), "utf8")));
   assert.ok(modules["/static/vendor/three/build/three.module.js"]);
   assert.ok(modules["/static/vendor/three/build/three.core.js"]);
+  assert.ok(modules["/static/screen-gui.mjs"]);
   assert.ok(modules["/static/vendor/three/examples/jsm/loaders/OBJLoader.js"]);
   for (const source of Object.values(modules)) {
     for (const match of source.matchAll(/["']offline:(\/static\/[^"']+)["']/g)) assert.ok(modules[match[1]], match[1]);

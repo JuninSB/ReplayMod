@@ -408,6 +408,63 @@ end
 local function elapsedMs()
     return math.floor((os.clock() - started - pausedTotal - (paused and (os.clock() - pausedAt) or 0)) * 1000)
 end
+-- Record the resolved layout at a bounded rate. Roblox has already applied
+-- UIListLayout, UIScale and other layout constraints to these rectangles.
+local lastScreenGuiJson, lastScreenGuiSample = "", 0
+local function readScreenGui()
+    local camera = workspace.CurrentCamera
+    local viewportSize = camera and camera.ViewportSize or Vector2.new(1920, 1080)
+    local result = {width = viewportSize.X, height = viewportSize.Y, screens = {}}
+    local playerGui = player:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then return result end
+    local total = 0
+    for _, screen in ipairs(playerGui:GetDescendants()) do
+        if screen:IsA("ScreenGui") and screen ~= gui and not screen:IsDescendantOf(gui) and screen.Enabled and #result.screens < 100 then
+            local output = {name = screen.Name, displayOrder = screen.DisplayOrder, items = {}}
+            local indexes, objects = {}, {}
+            for _, object in ipairs(screen:GetDescendants()) do
+                if object:IsA("GuiObject") and total < 400 then
+                    total += 1
+                    table.insert(objects, object)
+                    indexes[object] = #objects
+                elseif object:IsA("GuiObject") then result.truncated = true end
+            end
+            for _, object in ipairs(objects) do
+                local parent = object.Parent
+                while parent and parent ~= screen and not indexes[parent] do parent = parent.Parent end
+                local item = {className = object.ClassName, name = tostring(object.Name):sub(1, 120), parent = indexes[parent] or 0,
+                    x = object.AbsolutePosition.X, y = object.AbsolutePosition.Y, width = object.AbsoluteSize.X, height = object.AbsoluteSize.Y,
+                    rotation = object.Rotation, visible = object.Visible, z = object.ZIndex, clips = object.ClipsDescendants,
+                    color = hex(object.BackgroundColor3), transparency = object.BackgroundTransparency,
+                    borderSize = object.BorderSizePixel, borderColor = hex(object.BorderColor3)}
+                if object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
+                    item.text = tostring(object.Text):sub(1, 2000)
+                    item.textColor = hex(object.TextColor3); item.textTransparency = object.TextTransparency
+                    item.textSize = object.TextSize; item.textScaled = object.TextScaled; item.textWrapped = object.TextWrapped
+                    item.textXAlignment = object.TextXAlignment.Name; item.textYAlignment = object.TextYAlignment.Name
+                    item.font = tostring(object.Font); item.textStrokeColor = hex(object.TextStrokeColor3); item.textStrokeTransparency = object.TextStrokeTransparency
+                end
+                if object:IsA("ImageLabel") or object:IsA("ImageButton") then
+                    item.texture = tostring(object.Image); item.imageTransparency = object.ImageTransparency
+                    item.imageColor = hex(object.ImageColor3); item.scaleType = object.ScaleType.Name
+                end
+                local corner = object:FindFirstChildOfClass("UICorner")
+                if corner then item.corner = {scale = corner.CornerRadius.Scale, offset = corner.CornerRadius.Offset} end
+                local stroke = object:FindFirstChildOfClass("UIStroke")
+                if stroke and stroke.Enabled then item.stroke = {color = hex(stroke.Color), transparency = stroke.Transparency, thickness = stroke.Thickness, mode = stroke.ApplyStrokeMode.Name} end
+                local gradient = object:FindFirstChildOfClass("UIGradient")
+                if gradient and gradient.Enabled then
+                    local colors = {}
+                    for _, point in ipairs(gradient.Color.Keypoints) do table.insert(colors, {time = point.Time, color = hex(point.Value)}) end
+                    item.gradient = {rotation = gradient.Rotation, colors = colors}
+                end
+                table.insert(output.items, item)
+            end
+            table.insert(result.screens, output)
+        end
+    end
+    return result
+end
 local function soundIdOf(sound)
     if not soundIds[sound] then nextSoundId += 1; soundIds[sound] = "sound_" .. tostring(nextSoundId) end
     return soundIds[sound]
@@ -694,6 +751,14 @@ local function partPatch(inst, id, props)
 end
 local function sample()
     local frame = {t = elapsedMs(), a = {}, u = {}, d = {}, da = {}, du = {}, dd = {}}
+    if frame.t - lastScreenGuiSample >= 250 then
+        lastScreenGuiSample = frame.t
+        local ok, state = pcall(readScreenGui)
+        if ok then
+            local encoded = hs:JSONEncode(state)
+            if encoded ~= lastScreenGuiJson then frame.screenGui = state; lastScreenGuiJson = encoded end
+        end
+    end
     local lighting = readLighting()
     if not sameValue(lighting, lastLighting) then
         frame.lighting = lighting
@@ -792,7 +857,7 @@ local function sample()
         end
     end
     if removedHead > #removedQueue then removedQueue = {}; removedHead = 1 end
-    if #frame.a + #frame.u + #frame.d + #frame.da + #frame.du + #frame.dd > 0 or frame.camera or frame.lighting then
+    if #frame.a + #frame.u + #frame.d + #frame.da + #frame.du + #frame.dd > 0 or frame.camera or frame.lighting or frame.screenGui then
         local encoded = hs:JSONEncode(frame)
         table.insert(frameBuffer, encoded)
         frameBufferBytes += #encoded + 1
@@ -947,6 +1012,10 @@ local function begin()
         if i % 40 == 0 then task.wait() end
     end
     started = os.clock()
+    local okGui, screenGui = pcall(readScreenGui)
+    captured.base.screenGui = okGui and screenGui or {width = 1, height = 1, screens = {}}
+    lastScreenGuiJson = hs:JSONEncode(captured.base.screenGui)
+    lastScreenGuiSample = 0
     lastCamera = captured.base.camera
     sampleCount = 0
     statsAt, statsSamples = os.clock(), 0
@@ -1094,7 +1163,8 @@ local function chunksForCapture()
         end
         append('],"camera":' .. (captured.base.camera and hs:JSONEncode(captured.base.camera) or "null")
             .. ',"lighting":' .. hs:JSONEncode(captured.base.lighting)
-            .. ',"terrain":' .. (captured.base.terrain and hs:JSONEncode(captured.base.terrain) or "null") .. '}')
+            .. ',"terrain":' .. (captured.base.terrain and hs:JSONEncode(captured.base.terrain) or "null")
+            .. ',"screenGui":' .. hs:JSONEncode(captured.base.screenGui) .. '}')
     else
         append('{"serverId":' .. hs:JSONEncode(captured.serverId) .. ',"placeId":' .. hs:JSONEncode(captured.placeId)
             .. ',"replayName":' .. hs:JSONEncode(captured.replayName) .. ',"stepMs":' .. tostring(captured.stepMs) .. ',"captureFps":' .. tostring(captured.captureFps) .. ',"tickChanges":' .. hs:JSONEncode(captured.tickChanges) .. ',"durationMs":'
@@ -1110,7 +1180,8 @@ local function chunksForCapture()
         end
         append('],"camera":' .. (captured.base.camera and hs:JSONEncode(captured.base.camera) or "null")
             .. ',"lighting":' .. hs:JSONEncode(captured.base.lighting)
-            .. ',"terrain":' .. (captured.base.terrain and hs:JSONEncode(captured.base.terrain) or "null") .. '},"frameBlocks":[')
+            .. ',"terrain":' .. (captured.base.terrain and hs:JSONEncode(captured.base.terrain) or "null")
+            .. ',"screenGui":' .. hs:JSONEncode(captured.base.screenGui) .. '},"frameBlocks":[')
         for i, block in ipairs(captured.frameBlocks) do
             append((i > 1 and "," or "") .. hs:JSONEncode(block))
             if i % 20 == 0 then task.wait() end

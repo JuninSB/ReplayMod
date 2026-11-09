@@ -30,6 +30,8 @@ Each frame has `t` in milliseconds and optional `a` (added parts), `u` (updates)
 
 New replay captures can include `soundEvents` ordered by replay time. Each sound event records its local ID, action, `soundId`, playing state, time position and length, volume, playback speed, looping, rolloff settings, and optional parent-part ID and attachment offset. These are observations from the recording client, not guaranteed access to every server-side sound.
 
+Optional `base.screenGui` and `frames[].screenGui` describe the local client's sampled ScreenGui state; snapshots use `screenGui` at the top level. Each state has the recorded viewport dimensions and screen/item data. ScreenGui image texture references are eligible for offline export.
+
 Malformed JSON, a non-object payload, and invalid URL-encoded `replayId` values return 400. Snapshots using the legacy `__transport:"compact-v1"` representation are expanded before persistence. Snapshot, thumbnail, and cleanup routes remain for older captures.
 
 For non-loopback clients, the server prints a 20-digit login code in its terminal. The code expires after 30 minutes; its one-time ticket lasts 90 seconds and is bound to the server ID and client IP. The upload token lasts one hour with the same binding. The LAN API has no user accounts, and anyone who can reach the server can read the replay library. Keep it on a trusted network.
