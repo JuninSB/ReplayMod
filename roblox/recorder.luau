@@ -417,7 +417,7 @@ local function emitSoundState(sound, eventName)
     local parent = sound.Parent
     local attachment = parent and parent:IsA("Attachment") and parent or nil
     local part = attachment and attachment.Parent or parent
-    local spatial = part and part:IsA("BasePart") and tracked[part]
+    local spatial = part and part:IsA("BasePart")
     local row = {t = elapsedMs(), id = soundIdOf(sound), event = eventName, instancePath = pth(sound), soundId = tostring(sound.SoundId),
         playing = sound.IsPlaying, timePosition = sound.TimePosition, timeLength = sound.TimeLength,
         volume = sound.Volume, playbackSpeed = sound.PlaybackSpeed, looped = sound.Looped,
@@ -953,6 +953,7 @@ local function begin()
     pausedTotal = 0
     paused = false
     for _, sound in ipairs(game:GetService("SoundService"):GetDescendants()) do if sound:IsA("Sound") then watchSound(sound) end end
+    for _, sound in ipairs(player:GetDescendants()) do if sound:IsA("Sound") then watchSound(sound) end end
     recording = true
     preparing = false
     for sound in pairs(soundWatch) do if sound.IsPlaying then emitSoundState(sound, "initial") end end
@@ -1046,6 +1047,8 @@ end)
 local soundService = game:GetService("SoundService")
 connections[#connections + 1] = soundService.DescendantAdded:Connect(function(inst) if inst:IsA("Sound") then watchSound(inst) end end)
 connections[#connections + 1] = soundService.DescendantRemoving:Connect(function(inst) if inst:IsA("Sound") then unwatchSound(inst) end end)
+connections[#connections + 1] = player.DescendantAdded:Connect(function(inst) if inst:IsA("Sound") then watchSound(inst) end end)
+connections[#connections + 1] = player.DescendantRemoving:Connect(function(inst) if inst:IsA("Sound") then unwatchSound(inst) end end)
 local chatService = game:GetService("TextChatService")
 connections[#connections + 1] = chatService.MessageReceived:Connect(function(message)
     if not recording or paused or not captured then return end

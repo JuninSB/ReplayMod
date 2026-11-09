@@ -80,19 +80,37 @@ test("replay audio follows timeline pause, speed and a moving spatial source", a
   try {
     const part = new THREE.Object3D(); part.position.set(10, 0, 0); part.updateMatrixWorld();
     const camera = new THREE.PerspectiveCamera();
-    const player = new ReplayAudio([{ id: 's', t: 0, event: 'play', soundId: 'rbxasset://sounds/action_jump.mp3', playing: true, timePosition: 1, playbackSpeed: 1.5, volume: 0.5, spatial: true, partPath: 'p', offset: { x: 2, y: 0, z: 0 } }], () => part);
+    const player = new ReplayAudio([
+      { id: 's', t: 0, event: 'play', soundId: 'rbxasset://sounds/action_jump.mp3', playing: true, timePosition: 1, playbackSpeed: 1.5, volume: 0.5, spatial: true, partPath: 'p', offset: { x: 2, y: 0, z: 0 } },
+      { id: 'music', t: 0, event: 'play', soundId: 'rbxasset://sounds/music.mp3', playing: true, volume: 0.5, spatial: false },
+    ], () => part);
     player.unlock(); player.sync(2000, true, 2, camera, 1000, true);
     const node = player.nodes.get('s');
     assert.equal(node.audio.currentTime, 4);
     assert.equal(node.audio.playbackRate, 3);
     assert.equal(node.gain.gain.value, 0.5);
     assert.deepEqual(node.panner.point, [12, 0, 0]);
+    assert.equal(player.nodes.has('music'), true);
+    player.setKindEnabled(false, false);
+    assert.equal(player.nodes.has('music'), false);
+    assert.equal(player.nodes.has('s'), true);
+    player.sync(2000, true, 2, camera, 1020, true);
+    assert.equal(player.nodes.has('music'), false);
+    player.setKindEnabled(true, false);
+    assert.equal(player.nodes.size, 0);
+    player.setKindEnabled(false, true);
+    player.sync(2000, true, 2, camera, 1030, true);
+    assert.equal(player.nodes.has('music'), true);
+    assert.equal(player.nodes.has('s'), false);
+    player.setKindEnabled(true, true);
+    player.sync(2000, true, 2, camera, 1040, true);
+    const restoredNode = player.nodes.get('s');
     player.overrides.set('s', { volume: 0.25, playbackSpeed: 0.5 });
     player.sync(2000, true, 2, camera, 1050, true);
-    assert.equal(node.audio.playbackRate, 1);
-    assert.equal(node.gain.gain.value, 0.25);
+    assert.equal(restoredNode.audio.playbackRate, 1);
+    assert.equal(restoredNode.gain.gain.value, 0.25);
     player.sync(2000, false, 2, camera, 1100, true);
-    assert.equal(node.audio.paused, true);
+    assert.equal(restoredNode.audio.paused, true);
     player.stop();
   } finally { globalThis.Audio = previousAudio; globalThis.AudioContext = previousContext; }
 });

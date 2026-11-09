@@ -26,6 +26,8 @@ export class ReplayAudio {
     this.nodes = new Map();
     this.context = null;
     this.enabled = true;
+    this.enabled2d = true;
+    this.enabled3d = true;
     this.lastSync = 0;
     this.cursor = 0;
     this.lastTime = -1;
@@ -51,6 +53,14 @@ export class ReplayAudio {
     if (context?.close) context.close().catch(() => {});
   }
   setEnabled(enabled) { this.enabled = enabled; if (!enabled) this.stop(); }
+  setKindEnabled(spatial, enabled) {
+    if (spatial) this.enabled3d = enabled;
+    else this.enabled2d = enabled;
+    for (const [id, node] of this.nodes) {
+      if (Boolean(node.panner) !== spatial || enabled) continue;
+      node.audio.pause(); node.source.disconnect(); node.gain.disconnect(); node.panner?.disconnect(); node.audio.removeAttribute('src'); node.audio.load(); this.nodes.delete(id);
+    }
+  }
   statesAt(ms) {
     if (ms < this.lastTime) { this.cursor = 0; this.states.clear(); }
     while (this.cursor < this.events.length && Number(this.events[this.cursor].t || 0) <= ms) {
@@ -80,6 +90,7 @@ export class ReplayAudio {
     }
     for (const [id, recorded] of states) {
       const event = { ...recorded, ...(this.overrides.get(id) || {}) };
+      if (event.spatial ? !this.enabled3d : !this.enabled2d) continue;
       if (!event.playing || !event.soundId || this.nodes.size >= 32 && !this.nodes.has(id)) continue;
       const part = event.spatial ? this.resolvePart(event.partPath) : null;
       if (event.spatial && !part) { this.nodes.get(id)?.audio.pause(); continue; }

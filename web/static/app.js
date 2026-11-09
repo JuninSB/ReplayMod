@@ -95,7 +95,7 @@ let curMode = "rep";
 if (modeSelect) modeSelect.value = "rep";
 let repDat = null;
 let replayAudio = null;
-let replayAudioEnabled = true;
+const replayAudioEnabled = { 2: true, 3: true };
 let replayExplorerDirty = false;
 let replayExplorerLastAt = 0;
 let replayExplorerSignature = "";
@@ -4831,7 +4831,8 @@ function repLoad(raw) {
     const status = document.getElementById('audioStatus');
     if (status) status.textContent = message;
   });
-  replayAudio.setEnabled(replayAudioEnabled);
+  replayAudio.setKindEnabled(false, replayAudioEnabled[2]);
+  replayAudio.setKindEnabled(true, replayAudioEnabled[3]);
   repInterpolatedPaths.clear();
   repChatRenderedData = null;
   repChatRenderedCount = -1;
@@ -5551,7 +5552,7 @@ if (replayPlayBtn) {
     cancelAnimationFrame(repAnimation);
     if (!repRun && repMs >= repDat.dur) repSeek(0, true);
     repRun = !repRun;
-    if (repRun && replayAudioEnabled) replayAudio?.unlock();
+    if (repRun && (replayAudioEnabled[2] || replayAudioEnabled[3])) replayAudio?.unlock();
     replayAudio?.sync(repMs, repRun, repSpeed, three?.camera, performance.now(), true);
     repLast = 0;
     repUiSync();
@@ -5684,13 +5685,15 @@ document.getElementById("replaySpeed")?.addEventListener("change", (event) => {
   repSpeed = Number(event.target.value) || 1;
   repLast = 0;
 });
-document.getElementById('audioToggleBtn')?.addEventListener('click', event => {
-  replayAudioEnabled = !replayAudioEnabled;
-  replayAudio?.setEnabled(replayAudioEnabled);
-  if (replayAudioEnabled && repRun) { replayAudio?.unlock(); replayAudio?.sync(repMs, true, repSpeed, three?.camera, performance.now(), true); }
-  event.currentTarget.setAttribute('aria-pressed', String(replayAudioEnabled));
-  event.currentTarget.textContent = replayAudioEnabled ? 'Audio on' : 'Audio off';
-});
+for (const kind of [2, 3]) {
+  document.getElementById(`audio${kind}dToggleBtn`)?.addEventListener('click', event => {
+    replayAudioEnabled[kind] = !replayAudioEnabled[kind];
+    replayAudio?.setKindEnabled(kind === 3, replayAudioEnabled[kind]);
+    if (replayAudioEnabled[kind] && repRun) { replayAudio?.unlock(); replayAudio?.sync(repMs, true, repSpeed, three?.camera, performance.now(), true); }
+    event.currentTarget.setAttribute('aria-pressed', String(replayAudioEnabled[kind]));
+    event.currentTarget.textContent = `${kind}D audio ${replayAudioEnabled[kind] ? 'on' : 'off'}`;
+  });
+}
 document.getElementById("replayBack")?.addEventListener("click", () => repSeek(repMs - 5000, true));
 replayForward?.addEventListener("click", () => repSeek(repMs + 5000, true));
 const touchMovementSelect = document.getElementById('touchMovement');
