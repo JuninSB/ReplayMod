@@ -75,6 +75,7 @@ test("offline export includes the complete viewer module graph and capture asset
   const { collectModules, captureAssets, offlineCaptureRow } = await import("../web/static/offline-export.mjs");
   const modules = await collectModules("/static/app.js", file => Promise.resolve(readFileSync(path.join(__dirname, "../web", file), "utf8")));
   assert.ok(modules["/static/vendor/three/build/three.module.js"]);
+  assert.ok(modules["/static/vendor/three/build/three.core.js"]);
   assert.ok(modules["/static/vendor/three/examples/jsm/loaders/OBJLoader.js"]);
   for (const source of Object.values(modules)) {
     for (const match of source.matchAll(/["']offline:(\/static\/[^"']+)["']/g)) assert.ok(modules[match[1]], match[1]);

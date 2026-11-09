@@ -2187,13 +2187,12 @@ async function setupThree() {
   renderer.setSize(bootW, bootH);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.25;
-  renderer.useLegacyLights = false;
   renderer.shadowMap.enabled = true;
   // Directional shadows are expensive on mobile. Scene changes explicitly
   // request an update, so the same shadow map is reused between changes
   // instead of being rendered again for every animation frame.
   renderer.shadowMap.autoUpdate = false;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   viewport.appendChild(renderer.domElement);
 
