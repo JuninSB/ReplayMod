@@ -581,6 +581,7 @@ test("LAN code authentication binds tickets and tokens to the server", async () 
       ...process.env,
       SERVER_WEBVIEW_DATA_DIR: dataDir,
       SERVER_WEBVIEW_PORT: String(port),
+      SERVER_WEBVIEW_HOST: "0.0.0.0",
       SERVER_WEBVIEW_PUBLIC_BASE_URL: `http://192.0.2.1:${port}`,
     },
     stdio: ["ignore", "pipe", "pipe"],

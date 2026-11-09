@@ -3,7 +3,7 @@ import { postEffectShader } from "./post-effects.mjs";
 import { AssetLoads } from "./asset-loads.mjs";
 import { chooseSpawnTarget } from "./camera-spawn.mjs";
 import { buildTerrainGeometries } from "./terrain-mesh.mjs";
-import { ReplayTimeline } from "./replay-timeline.mjs";
+import { ReplayTimeline, isPoseOnlyPatch } from "./replay-timeline.mjs";
 import { joystickVector } from "./touch-joystick.mjs";
 import { ReplayAudio } from "./replay-audio.mjs";
 import { ScreenGuiView } from "./screen-gui.mjs";
@@ -102,6 +102,7 @@ let replayAudio = null;
 const replayAudioEnabled = { 2: true, 3: true };
 let replayExplorerDirty = false;
 let replayExplorerLastAt = 0;
+let replayInspectorLastAt = 0;
 let replayExplorerSignature = "";
 let repMap = null;
 let repDecalsByPart = new Map();
@@ -153,6 +154,16 @@ let diagnosticLastFlush = 0;
 let diagnosticLastSample = 0;
 let diagnosticSending = false;
 let diagnosticFrameCount = 0;
+const diagnosticCpu = {
+  occlusion: { total: 0, count: 0, max: 0 },
+  render: { total: 0, count: 0, max: 0 },
+  replay: { total: 0, count: 0, max: 0 },
+};
+function recordCpuDuration(kind, started) {
+  const bucket = diagnosticCpu[kind];
+  const duration = Math.max(0, performance.now() - started);
+  bucket.total += duration; bucket.count += 1; bucket.max = Math.max(bucket.max, duration);
+}
 function recordViewerDiagnostic(kind, detail = "") {
   if (window.__REPLAY_OFFLINE__) return;
   viewerDiagnostics.push({ time: new Date().toISOString(), kind, detail: `${diagnosticSession} ${String(detail).slice(0, 260)}` });
@@ -178,6 +189,12 @@ function sampleViewerDiagnostics(now) {
   const stats = three.renderer.info;
   const assets = assetLoads.summary();
   recordViewerDiagnostic('performance', `fps=${measuredFps.toFixed(1)} calls=${stats.render.calls} triangles=${stats.render.triangles} geometries=${stats.memory.geometries} textures=${stats.memory.textures} parts=${partMeshes.length} meshes=${assets.mesh.ready}/${assets.mesh.total} texturesLoaded=${assets.texture.ready}/${assets.texture.total} failed=${assets.failures.length} pixelRatio=${three.renderer.getPixelRatio()} shadowRange=${dbg.shadowRange} culling=${dbg.cullingOn} playing=${repRun}`);
+  const cpu = Object.entries(diagnosticCpu).map(([name, bucket]) => {
+    const value = `${name}Avg=${(bucket.total / Math.max(1, bucket.count)).toFixed(2)}ms ${name}Max=${bucket.max.toFixed(2)}ms`;
+    bucket.total = bucket.count = bucket.max = 0;
+    return value;
+  }).join(' ');
+  recordViewerDiagnostic('performance_cpu', `${cpu} scale=${dbg.renderScale} distance=${dbg.renderDistance} shadowQuality=${dbg.shadowQuality} shadowUpdates=${dbg.shadowUpdateRate} shaders=${dbg.shadersOn}`);
   for (const failure of assets.failures) {
     const key = String(failure.key).match(/(?:rbxassetid:(?:\/\/|%2f%2f)|[?&]id=)(\d+)/i)?.[1] || 'unknown';
     const marker = `${failure.kind}:${key}`;
@@ -203,6 +220,7 @@ const materialPbrMapCache = new Map();
 const USE_LEGACY_MAT_TEX = false;
 const OCC_RT_MS = 250;
 const OCC_MAX_OCCLUSION_TESTS = 24;
+const OCC_BUDGET_MS = 3;
 const OCC_EDGE_GUARD = 0.9;
 const OCC_HIDE_CONFIRM = 2;
 const OCC_HOLD_VISIBLE_MS = 500;
@@ -211,6 +229,7 @@ const MESH_CHUNK_ON = false;
 const MESH_CHUNK_TRI_THRESHOLD = 2200;
 const MESH_CHUNK_MAX = 24;
 let occLastAt = 0;
+let occTargetCursor = 0;
 let shadowCoverageAt = 0;
 let shadowCoverageState = null;
 let shadowSceneDirty = true;
@@ -956,7 +975,7 @@ function wireClientLoggers() {
   document.addEventListener('change', event => {
     const element = event.target;
     if (!element?.id) return;
-    const allowed = new Set(['shadowRange', 'shadowQuality', 'shadowUpdateRate', 'sceneBrightness', 'setFov', 'setCamSens', 'modeSelect', 'replaySeek', 'dbgShaders', 'dbgSmoothLighting', 'dbgSmoothShadows', 'dbgFps', 'dbgTextures', 'dbgFog', 'dbgCulling', 'dbgPlayerLabels', 'dbgMeshBoxes', 'dbgFxPlaceholders', 'dbgWireframe', 'replaySpeed']);
+    const allowed = new Set(['renderScale', 'renderDistance', 'shadowRange', 'shadowQuality', 'shadowUpdateRate', 'sceneBrightness', 'setFov', 'setCamSens', 'modeSelect', 'replaySeek', 'dbgShaders', 'dbgSmoothLighting', 'dbgSmoothShadows', 'dbgFps', 'dbgTextures', 'dbgFog', 'dbgCulling', 'dbgPlayerLabels', 'dbgMeshBoxes', 'dbgFxPlaceholders', 'dbgWireframe', 'replaySpeed']);
     if (allowed.has(element.id)) recordViewerDiagnostic('setting', `${element.id}=${element.type === 'checkbox' ? Boolean(element.checked) : String(element.value).slice(0, 20)}`);
   });
   recordViewerDiagnostic('session', `started viewport=${window.innerWidth}x${window.innerHeight} pixelRatio=${window.devicePixelRatio || 1}`);
@@ -1554,7 +1573,7 @@ function makeSurfaceFaceMats(mesh, part, patterns) {
   if (!flags.some(Boolean)) return null;
   const mk = (u, v, kind) => {
     if (!kind || !patterns[kind] || (!isPlasticMat(part.material) && !['hinge', 'motor', 'steppingmotor'].includes(kind))) {
-      return new THREE.MeshStandardMaterial({ transparent: true, opacity: 0, depthWrite: false });
+      return new THREE.MeshStandardMaterial({ visible: false, transparent: true, opacity: 0, depthWrite: false });
     }
     const texture = patterns[kind].clone();
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
@@ -2388,7 +2407,9 @@ async function setupThree() {
     const delta = Math.min(0.05, Math.max(0, (now - lastFrameAt) / 1000));
     lastFrameAt = now;
     updateFly(delta);
+    const occStarted = performance.now();
     updateOcc(now);
+    recordCpuDuration('occlusion', occStarted);
     updateFpsOverlay(now);
     sampleViewerDiagnostics(now);
     flushViewerDiagnostics(now);
@@ -2404,11 +2425,13 @@ async function setupThree() {
       three.post.uniforms.sunIntensity.value = sunPoint.z < 1 && skyState.sunVector.y > 0 ? (skyState.sunRaysIntensity || 0) : 0;
       three.post.uniforms.atmosphereGlare.value = sunPoint.z < 1 && skyState.sunVector.y > 0 ? skyState.glare : 0;
     }
+    const renderStarted = performance.now();
     if (shouldUseComposer()) {
       three.composer.render();
     } else {
       renderer.render(scene, camera);
     }
+    recordCpuDuration('render', renderStarted);
   };
   animate();
   return true;
@@ -2604,9 +2627,12 @@ function isTransparentMat(mat) {
 }
 function isLikelyOccluder(mesh) {
   if (!mesh || !mesh.geometry || mesh.userData?.forceHide) return false;
+  // Bounding boxes for arbitrary meshes are not safe solid occluders: a box
+  // can cover a window or empty space, and raycasting meshes scans triangles.
+  if (mesh.geometry.type !== 'BoxGeometry' || mesh.userData?.part?.meshId) return false;
   const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
   if (mats.length === 0) return false;
-  if (mats.every((m) => isTransparentMat(m))) return false;
+  if (mats.some((m) => isTransparentMat(m) || Number(m?.alphaTest || 0) > 0)) return false;
   const part = mesh.userData?.part || {};
   const sx = Math.max(0.2, toNum(part?.size?.x, 1));
   const sy = Math.max(0.2, toNum(part?.size?.y, 1));
@@ -2749,8 +2775,12 @@ function updateOcc(nowMs) {
 
   targets.sort((a, b) => b.dist - a.dist);
   const maxTests = Math.min(OCC_MAX_OCCLUSION_TESTS, targets.length);
+  const startedAt = performance.now();
+  let tested = 0;
   for (let i = 0; i < maxTests; i += 1) {
-    const t = targets[i];
+    if (tested > 0 && performance.now() - startedAt >= OCC_BUDGET_MS) break;
+    const t = targets[(occTargetCursor + i) % targets.length];
+    tested += 1;
     const mesh = t.mesh;
     const samplePts = worldSamplePoints(mesh);
     if (samplePts.length === 0) {
@@ -2782,6 +2812,7 @@ function updateOcc(nowMs) {
     }
     setCameraVisibility(mesh, false);
   }
+  if (targets.length) occTargetCursor = (occTargetCursor + tested) % targets.length;
 
   for (const mesh of partMeshes) {
     const overlay = mesh?.userData?.studOverlay;
@@ -3612,7 +3643,7 @@ async function downloadClientLogs() {
         devicePixelRatio: window.devicePixelRatio,
       },
       selectedServerId: serverSelect.value || null,
-      latestSnapshot,
+      latestSnapshot: repDat ? repSnapRaw() : latestSnapshot,
       renderer: rInfo(),
       html: {
         title: document.title,
@@ -4595,7 +4626,7 @@ function repDecalRemove(id) {
   repDecalsPanelDirty = true;
 }
 
-function repUpd(p, idx, old) {
+function repUpd(p, idx, old, patch = null) {
   if (!p) return;
   const k = String(p.path || "");
   if (!k) return;
@@ -4606,6 +4637,11 @@ function repUpd(p, idx, old) {
   }
   old = mesh.userData.part || old;
   p = applyViewerOverrides(p, viewerOverrides.get(k));
+  if (isPoseOnlyPatch(patch)) {
+    mesh.userData.part = p;
+    repSet(mesh, p, 1, null);
+    return;
+  }
   if (repNeedGeo(old, p)) {
     repDel(k);
     repAdd(p, idx);
@@ -4718,7 +4754,8 @@ function repDraw(force = false) {
     renderDecalList(Array.from(repDat.decalMap.values()));
     repDecalsPanelDirty = false;
   }
-  if (replayExplorerDirty && (force || now - replayExplorerLastAt >= 350)) {
+  const explorerVisible = document.body.classList.contains('sidebar-open') && !sidebarExplorerPane?.hidden;
+  if (explorerVisible && replayExplorerDirty && (force || now - replayExplorerLastAt >= 350)) {
     latestSnapshot = repSnapRaw();
     const nextSignature = replayExplorerKey(latestSnapshot);
     if (nextSignature !== replayExplorerSignature) {
@@ -4734,6 +4771,11 @@ function repDraw(force = false) {
     replayExplorerDirty = false;
     replayExplorerLastAt = now;
   }
+  if (explorerVisible && selectedPath && selectedExplorerNode && now - replayInspectorLastAt >= 350 && !inspectorData.contains(document.activeElement)) {
+    const selected = repMap?.get(selectedPath);
+    if (selected) { selectedExplorerNode.properties = selected; renderProperties(selectedExplorerNode); }
+    replayInspectorLastAt = now;
+  }
 }
 
 function repSeek(ms, force = false) {
@@ -4747,12 +4789,14 @@ function repSeek(ms, force = false) {
       repBuild(false);
     },
     onChange(change) {
-      replayExplorerDirty = true;
-      if (change.type === "add") repAdd(change.part, change.index);
-      else if (change.type === "update") repUpd(change.part, change.index, change.previous);
-      else if (change.type === "remove") repDel(change.path);
-      else if (change.type === "decal-add" || change.type === "decal-update") repDecalUpsert(change.decal);
-      else if (change.type === "decal-remove") repDecalRemove(change.id);
+      if (change.type === "add") { replayExplorerDirty = true; repAdd(change.part, change.index); }
+      else if (change.type === "update") {
+        if (change.patch && ['name', 'instancePath', 'className', 'characterName', 'childInstances'].some(key => key in change.patch)) replayExplorerDirty = true;
+        repUpd(change.part, change.index, change.previous, change.patch);
+      }
+      else if (change.type === "remove") { replayExplorerDirty = true; repDel(change.path); }
+      else if (change.type === "decal-add" || change.type === "decal-update") { replayExplorerDirty = true; repDecalUpsert(change.decal); }
+      else if (change.type === "decal-remove") { replayExplorerDirty = true; repDecalRemove(change.id); }
       else if (change.type === "screen-gui") screenGuiView.render(change.screenGui);
       else if (change.type === "lighting") {
         latestSnapshot = repSnapRaw();
@@ -4771,7 +4815,9 @@ function repTick(now) {
   if (!repLast) repLast = now;
   const dt = Math.max(0, now - repLast);
   repLast = now;
+  const replayStarted = performance.now();
   repSeek(repMs + dt * repSpeed, false);
+  recordCpuDuration('replay', replayStarted);
   if (repMs >= repDat.dur) {
     repRun = false;
     replayAudio?.sync(repMs, false, repSpeed, three?.camera, now, true);
@@ -5104,6 +5150,19 @@ function setSidebarView(view) {
     button.setAttribute("aria-pressed", String(button.dataset.sidebarView === view));
   }
   if (panelTitle) panelTitle.textContent = ({ scene: 'Scene', rendering: 'Rendering', camera: 'Camera', explorer: 'Explorer', details: 'Details' })[view];
+  if (view === 'explorer' && repDat) {
+    if (replayExplorerDirty) {
+      latestSnapshot = repSnapRaw();
+      renderExplorer();
+      replayExplorerSignature = replayExplorerKey(latestSnapshot);
+      replayExplorerDirty = false;
+    }
+    const selected = repMap?.get(selectedPath);
+    if (selected && selectedExplorerNode && !inspectorData.contains(document.activeElement)) {
+      selectedExplorerNode.properties = selected;
+      renderProperties(selectedExplorerNode);
+    }
+  }
 }
 
 function syncLibraryTabs() {

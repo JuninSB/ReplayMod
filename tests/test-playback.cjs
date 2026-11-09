@@ -6,6 +6,27 @@ const { readFileSync } = require("node:fs");
 const { spawnSync } = require("node:child_process");
 const vm = require("node:vm");
 
+test("Termux launcher keeps localhost default and accepts an explicit remote address", () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'replay-launcher-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'curl'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    fs.writeFileSync(path.join(dir, 'node'), '#!/bin/sh\nprintf "HOST=%s\\nBASE=%s\\n" "$SERVER_WEBVIEW_HOST" "$SERVER_WEBVIEW_PUBLIC_BASE_URL"\n', { mode: 0o755 });
+    const env = { ...process.env, PATH: `${dir}:${process.env.PATH}` };
+    delete env.SERVER_WEBVIEW_HOST; delete env.SERVER_WEBVIEW_PORT; delete env.SERVER_WEBVIEW_PUBLIC_BASE_URL;
+    const script = path.join(__dirname, '../iniciar-teste.sh');
+    const local = spawnSync('sh', [script], { env, encoding: 'utf8' });
+    assert.equal(local.status, 0);
+    assert.match(local.stdout, /HOST=127\.0\.0\.1/);
+    assert.match(local.stdout, /BASE=http:\/\/127\.0\.0\.1:8000/);
+    const remote = spawnSync('sh', [script], { env: { ...env, SERVER_WEBVIEW_HOST: '0.0.0.0', SERVER_WEBVIEW_PUBLIC_BASE_URL: 'http://100.101.102.103:8000' }, encoding: 'utf8' });
+    assert.equal(remote.status, 0);
+    assert.match(remote.stdout, /HOST=0\.0\.0\.0/);
+    assert.match(remote.stdout, /BASE=http:\/\/100\.101\.102\.103:8000/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("joystick clamps movement and has a dead zone", async () => {
   const { joystickVector } = await import('../web/static/touch-joystick.mjs');
   assert.deepEqual(joystickVector(1, 1, 50), { x: 0, y: 0 });
@@ -109,8 +130,45 @@ test("surface tiles use part color and exact physical repeats on each face", asy
   assert.equal(materials[4].map.repeat.y, 0.5);
   assert.ok(materials[2].opacity > 0);
   assert.equal(materials[0].opacity, 0);
+  assert.equal(materials[0].visible, false);
   assert.equal(context.hasSurfacePattern({ material: 'Wood', topSurface: 'Studs' }), false);
   assert.equal(context.hasSurfacePattern({ material: 'Wood', topSurface: 'Hinge' }), true);
+});
+
+test("only opaque box geometry is used as a conservative occluder", () => {
+  const THREE = require('three');
+  const source = readFileSync(path.join(__dirname, '../web/static/app.js'), 'utf8');
+  const context = vm.createContext({ toNum: (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback });
+  vm.runInContext(source.slice(source.indexOf('function isTransparentMat('), source.indexOf('function shouldSkipOcclusionForTarget(')), context);
+  const box = new THREE.Mesh(new THREE.BoxGeometry(5, 5, 5), new THREE.MeshBasicMaterial());
+  box.userData.part = { size: { x: 5, y: 5, z: 5 } };
+  assert.equal(context.isLikelyOccluder(box), true);
+  box.material.transparent = true;
+  assert.equal(context.isLikelyOccluder(box), false);
+  box.material.transparent = false;
+  box.userData.part.meshId = 'mesh';
+  assert.equal(context.isLikelyOccluder(box), false);
+  const sphere = new THREE.Mesh(new THREE.SphereGeometry(), new THREE.MeshBasicMaterial());
+  assert.equal(context.isLikelyOccluder(sphere), false);
+});
+
+test("movement-only replay updates bypass expensive appearance comparisons", async () => {
+  const { isPoseOnlyPatch, ReplayTimeline } = await import('../web/static/replay-timeline.mjs');
+  const { applyViewerOverrides } = await import('../web/static/viewer-overrides.mjs');
+  assert.equal(isPoseOnlyPatch({ path: 'p', position: { x: 2 } }), true);
+  assert.equal(isPoseOnlyPatch({ path: 'p', position: { x: 2 }, color3: '#ffffff' }), false);
+  const source = readFileSync(path.join(__dirname, '../web/static/app.js'), 'utf8');
+  const mesh = { userData: { part: { path: 'p', position: { x: 1 } } } };
+  const context = vm.createContext({ partByPath: new Map([['p', mesh]]), viewerOverrides: new Map(), applyViewerOverrides, isPoseOnlyPatch, repSet: (obj, part) => { obj.applied = part; }, repNeedGeo: () => { throw Error('geometry compared'); }, repNeedMat: () => { throw Error('material compared'); } });
+  vm.runInContext(source.slice(source.indexOf('function repUpd('), source.indexOf('function repBuild(')), context);
+  context.updated = { path: 'p', position: { x: 2 } }; context.patch = { path: 'p', position: { x: 2 } };
+  vm.runInContext('repUpd(updated, 0, null, patch)', context);
+  assert.equal(mesh.userData.part.position.x, 2);
+  assert.equal(mesh.applied.position.x, 2);
+  const timeline = new ReplayTimeline({ base: { parts: [{ path: 'p', position: { x: 1 } }] }, durationMs: 10, frames: [{ t: 5, u: [context.patch] }] }, p => p);
+  let observed;
+  timeline.seek(5, { onChange: event => { observed = event.patch; } });
+  assert.equal(observed.position.x, 2);
 });
 
 test("viewer edits keep invisible objects visible across playback updates without modifying recorded state", async () => {

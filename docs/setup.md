@@ -43,6 +43,14 @@ SERVER_WEBVIEW_PUBLIC_BASE_URL=http://192.168.1.24:8000
 
 Replace `192.168.1.24` with the server computer's current LAN IP, allow port 8000 through its private-network firewall, and restart Replay Mod. The terminal prints a 20-digit login code. Enter that code in the recorder UI on the phone; it expires after 30 minutes and is used once. This code authorizes replay uploads from the phone. It is not a Roblox password, Asset Delivery key, or permanent token. Do not expose the server to the public internet.
 
+For the Termux test launcher over Tailscale, stop the existing server first, then replace the example address with the server device's Tailscale IPv4 address:
+
+```sh
+SERVER_WEBVIEW_HOST=0.0.0.0 SERVER_WEBVIEW_PUBLIC_BASE_URL=http://100.101.102.103:8000 sh iniciar-teste.sh
+```
+
+The friend opens that address on a Tailscale-connected device that has permission to reach the server. Check `/health` first. Binding `0.0.0.0` also listens on other network interfaces, and anyone able to connect can read the replay library; the terminal code controls uploads, not browsing. On Android, Tailscale app restrictions, firewall rules or the network environment can prevent access. The default launcher remains local-only.
+
 ### Asset Delivery
 
 Asset Delivery works automatically for supported `rbxassetid://` references when the viewer requests them: Replay Mod fetches permitted assets from Roblox and caches them under `assetdelivery/meshes/` or `assetdelivery/textures/`. The first fetch needs internet access. Cache folders are created as needed and remain local; they are not included in the source ZIP. Depending on the asset and Roblox access response, you can optionally configure your own `.ROBLOSECURITY` session or an eligible Open Cloud key on the server.

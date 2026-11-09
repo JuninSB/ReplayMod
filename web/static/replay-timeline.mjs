@@ -128,7 +128,7 @@ export class ReplayTimeline {
       const part = this.part(updates[i], i);
       if (!part) continue;
       const previous = this.map.get(String(part.path)) || null;
-      onChange({ type: "update", part, previous, index: i });
+      onChange({ type: "update", part, previous, index: i, patch: updates[i] });
       this.map.set(String(part.path), part);
     }
     for (const value of removals) {
@@ -230,6 +230,12 @@ export class ReplayTimeline {
         : 0;
     return { a: first.camera, b: second.camera, alpha };
   }
+}
+
+export function isPoseOnlyPatch(patch) {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return false;
+  for (const key of Object.keys(patch)) if (key !== 'path' && key !== 'position' && key !== 'orientation') return false;
+  return patch.position !== undefined || patch.orientation !== undefined;
 }
 
 export function interpolateAngle(a, b, alpha) {
