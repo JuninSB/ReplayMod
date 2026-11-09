@@ -68,6 +68,7 @@ export function normalizePart(raw) {
     doubleSided: Boolean(readAny(raw, ["doubleSided", "DoubleSided"]) ?? false),
     meshVertexColor: toVec3(readAny(raw, ["meshVertexColor", "MeshVertexColor"]), null),
     meshScale: raw.meshScale || null,
+    meshSize: toVec3(raw.meshSize, null),
     meshOffset: raw.meshOffset || null,
   };
 }

@@ -212,6 +212,9 @@ local connections, watch, decalWatch = {}, {}, {}
 local graphicsWatch, clothingWatch = {}, {}
 local soundWatch = {}
 local soundIds = setmetatable({}, {__mode = "k"})
+local soundList, soundIndexes = {}, {}
+local soundLastPlaying = setmetatable({}, {__mode = "k"})
+local soundPollCursor, nextSoundPoll = 1, 0
 local nextSoundId = 0
 local ids = setmetatable({}, {__mode = "k"})
 local decalIds = setmetatable({}, {__mode = "k"})
@@ -483,11 +486,15 @@ local function emitSoundState(sound, eventName)
         spatial = not not spatial, partPath = spatial and idOf(part) or ""}
     if attachment and spatial then row.offset = v3(attachment.Position) end
     table.insert(captured.soundEvents, row)
+    soundLastPlaying[sound] = row.playing
 end
 local function watchSound(sound)
     if not sound:IsA("Sound") or soundWatch[sound] then return end
     local watchers = {}
     soundWatch[sound] = watchers
+    table.insert(soundList, sound)
+    soundIndexes[sound] = #soundList
+    soundLastPlaying[sound] = sound.IsPlaying
     local parent = sound.Parent
     if parent and parent:IsA("Attachment") then parent = parent.Parent end
     if parent and tracked[parent] and (recording or preparing) then mark(parent, "full") end
@@ -502,7 +509,7 @@ local function watchSound(sound)
     on(sound.DidLoop, "loop")
     table.insert(watchers, sound.Changed:Connect(function(property)
         if property == "SoundId" or property == "Volume" or property == "PlaybackSpeed" or property == "Looped"
-            or property == "RollOffMinDistance" or property == "RollOffMaxDistance" or property == "RollOffMode" or property == "Parent" then
+            or property == "RollOffMinDistance" or property == "RollOffMaxDistance" or property == "RollOffMode" or property == "Parent" or property == "Playing" then
             emitSoundState(sound, "change")
         end
     end))
@@ -517,6 +524,25 @@ local function unwatchSound(sound)
     if recording and not paused then emitSoundState(sound, "removed") end
     for _, connection in ipairs(watchers) do connection:Disconnect() end
     soundWatch[sound] = nil
+    local index = soundIndexes[sound]
+    if index then
+        local last = soundList[#soundList]
+        soundList[index] = last
+        soundList[#soundList] = nil
+        soundIndexes[sound] = nil
+        if last ~= sound then soundIndexes[last] = index end
+    end
+    soundLastPlaying[sound] = nil
+end
+local function pollSoundStates()
+    local count = math.min(256, #soundList)
+    for _ = 1, count do
+        if soundPollCursor > #soundList then soundPollCursor = 1 end
+        local sound = soundList[soundPollCursor]
+        soundPollCursor += 1
+        local ok, playing = pcall(function() return sound.IsPlaying end)
+        if ok and playing ~= soundLastPlaying[sound] then pcall(emitSoundState, sound, "state") end
+    end
 end
 local function flushFrameBuffer()
     if not captured or #frameBuffer == 0 then return end
@@ -1025,6 +1051,7 @@ local function begin()
     for _, sound in ipairs(player:GetDescendants()) do if sound:IsA("Sound") then watchSound(sound) end end
     recording = true
     preparing = false
+    for sound in pairs(soundWatch) do soundLastPlaying[sound] = sound.IsPlaying end
     for sound in pairs(soundWatch) do if sound.IsPlaying then emitSoundState(sound, "initial") end end
     baseIndices, baseInstances, baseDecals, baseDecalSeen = {}, {}, {}, {}
     if captureMode == "snapshot" then
@@ -1047,6 +1074,10 @@ local function begin()
             rs.Heartbeat:Wait()
             if not recording or disposed then break end
             local now = os.clock()
+            if not paused and not preparing and now >= nextSoundPoll then
+                nextSoundPoll = now + 0.05
+                pollSoundStates()
+            end
             local interval = 1 / captureFps
             if paused or preparing then
                 nextSampleAt = now + interval
@@ -1186,7 +1217,7 @@ local function chunksForCapture()
             append((i > 1 and "," or "") .. hs:JSONEncode(block))
             if i % 20 == 0 then task.wait() end
         end
-        append('],"chatEvents":' .. hs:JSONEncode(captured.chatEvents) .. ',"soundEvents":' .. hs:JSONEncode(captured.soundEvents) .. '}')
+        append('],"chatEvents":' .. hs:JSONEncode(captured.chatEvents) .. ',"soundStateTracking":1,"soundEvents":' .. hs:JSONEncode(captured.soundEvents) .. '}')
     end
     if #current > 0 then table.insert(chunks, current) end
     encodedChunks = chunks

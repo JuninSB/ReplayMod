@@ -8,6 +8,7 @@ import { joystickVector } from "./touch-joystick.mjs";
 import { ReplayAudio } from "./replay-audio.mjs";
 import { ScreenGuiView } from "./screen-gui.mjs";
 import { applyViewerOverrides } from "./viewer-overrides.mjs";
+import { applyMeshSizing } from "./mesh-sizing.mjs";
 import { downloadOffline, offlineCaptureRow } from "./offline-export.mjs?v=offline-3";
 import { toNum, toVec3, readAny, normalizePart, faceName, visibleDecalTexture, isCharHead, textureProxy, textureFetchUrl, meshProxy, usesBoxFaceMaterials } from "./scene-data.mjs?v=render-20261109-2";
 import { setCameraVisibility, cameraSees } from "./render-visibility.mjs";
@@ -249,6 +250,7 @@ const dbg = {
   shadowQuality: "balanced",
   shadowUpdateRate: "live",
   renderScale: "auto",
+  renderDistance: 6000,
   showFps: false,
   texturesOn: true,
   fogOn: true,
@@ -260,6 +262,10 @@ const dbg = {
   controlsOn: false,
   wireframeOn: false,
 };
+try {
+  const savedDistance = Number(localStorage.getItem('replayRenderDistance'));
+  if ([256, 512, 1024, 2048, 6000].includes(savedDistance)) dbg.renderDistance = savedDistance;
+} catch {}
 
 const camCfg = {
   fov: 55,
@@ -1123,7 +1129,7 @@ function hasStudsSurface(part) {
     part.frontSurface,
     part.backSurface,
   ];
-  return values.some((v) => String(v || "").toLowerCase().includes("studs"));
+  return values.some(isStudFace);
 }
 
 function isStudFace(v) {
@@ -1349,6 +1355,7 @@ function syncSky(sunVector, dayMix, nightMix, clockTime) {
   if (skyVisuals.stars) { skyVisuals.stars.visible = showCelestial && nightMix > 0.15; skyVisuals.stars.material.opacity = nightMix; }
   const base = three.controls?.target ? three.controls.target.clone() : new THREE.Vector3();
   skyVisuals.group.position.copy(base);
+  skyVisuals.group.scale.setScalar(Math.min(1, three.camera.far / 1200));
   const sunPos = sunVector.clone().multiplyScalar(radius);
   const moonPos = sunVector.clone().multiplyScalar(-radius);
 
@@ -1498,7 +1505,7 @@ function getStudTex() {
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
 
-  ctx.fillStyle = "#9c8c6f";
+  ctx.fillStyle = "#f1f1f1";
   ctx.fillRect(0, 0, size, size);
 
   const cols = 3;
@@ -1507,23 +1514,18 @@ function getStudTex() {
   const stepY = size / rows;
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < cols; x += 1) {
-      const cx = x * stepX + stepX * 0.5;
-      const cy = y * stepY + stepY * 0.5;
-      const r = Math.min(stepX, stepY) * 0.22;
-
-      const g = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.3, cx, cy, r * 1.15);
-      g.addColorStop(0, "#d2c2a3");
-      g.addColorStop(1, "#5f543f");
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.strokeStyle = "rgba(40,32,22,0.65)";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.stroke();
+      const side = Math.min(stepX, stepY) * 0.6;
+      const left = x * stepX + (stepX - side) / 2;
+      const top = y * stepY + (stepY - side) / 2;
+      ctx.fillStyle = "#858585";
+      ctx.fillRect(left + 2, top + 3, side, side);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(left, top, side, side);
+      ctx.fillStyle = "#c9c9c9";
+      ctx.fillRect(left + 4, top + 4, side - 8, side - 8);
+      ctx.fillStyle = "#a4a4a4";
+      ctx.fillRect(left + 4, top + 4, side - 8, 2);
+      ctx.fillRect(left + 4, top + 4, 2, side - 8);
     }
   }
 
@@ -1571,15 +1573,17 @@ function makeStudsFaceMats(mesh, part, srcTex) {
     t.needsUpdate = true;
     return new THREE.MeshStandardMaterial({
       transparent: true,
-      opacity: 0.34,
+      opacity: 0.65 * (1 - Math.max(0, Math.min(1, toNum(part.transparency, 0)))),
       roughness: 0.72,
       metalness: 0.02,
       depthWrite: false,
       polygonOffset: true,
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -1,
-      color: "#ffffff",
+      color: hexColor(part.color3 || "#ffffff"),
       map: t,
+      bumpMap: t,
+      bumpScale: 0.08,
     });
   };
 
@@ -1729,6 +1733,7 @@ function applyClothingOverlays(mesh, part, currentAppearance) {
 
 function applyMatTex(mesh, part, version) {
   if (!mesh || !mesh.material || !three) return;
+  clearStudOverlay(mesh);
   const appearanceStamp = (mesh.userData.appearanceStamp || 0) + 1;
   mesh.userData.appearanceStamp = appearanceStamp;
   const currentAppearance = () =>
@@ -1834,12 +1839,11 @@ function applyMatTex(mesh, part, version) {
     return;
   }
   if (hasStudsSurface(part) && isPlasticMat(part?.material)) {
-    loadTexSrc("rbxasset://textures/studs.dds", (sourceTex) => {
+    Promise.resolve(getStudTex()).then((sourceTex) => {
       if (!currentAppearance()) return;
       // Some mobile WebGL implementations cannot decode the DDS even though
       // the local client file exists. Keep the recorded Studs/Inlet surface
       // visible with the procedural fallback rather than silently removing it.
-      sourceTex ||= getStudTex();
       if (!sourceTex) return;
       const isBox = String(part?.shape || "").replace("Enum.PartType.", "").toLowerCase() === "block";
       if (isBox) {
@@ -1854,7 +1858,7 @@ function applyMatTex(mesh, part, version) {
           overlay.scale.copy(mesh.scale).multiplyScalar(1.002);
           overlay.renderOrder = (mesh.renderOrder || 0) + 1;
           overlay.castShadow = false;
-          overlay.receiveShadow = false;
+          overlay.receiveShadow = true;
           overlay.userData.isStudOverlay = true;
           three.scene.add(overlay);
           mesh.userData.studOverlay = overlay;
@@ -1991,18 +1995,7 @@ function applyMeshGeo(mesh, part, version) {
       const sx = Math.max(0.2, toNum(part?.size?.x, 4));
       const sy = Math.max(0.2, toNum(part?.size?.y, 4));
       const sz = Math.max(0.2, toNum(part?.size?.z, 4));
-      if (part.meshScale) {
-        const builtinHead = String(part.meshType || '').endsWith('.Head') || (!part.meshType && String(part.meshId).endsWith('avatar/heads/head.mesh'));
-        if (builtinHead) {
-          geom.translate(-center.x,-center.y,-center.z);
-          geom.scale(1 / Math.max(1e-5,sourceSize.x),1 / Math.max(1e-5,sourceSize.y),1 / Math.max(1e-5,sourceSize.z));
-        }
-        geom.scale(part.meshScale.x, part.meshScale.y, part.meshScale.z);
-        if (part.meshOffset) geom.translate(part.meshOffset.x, part.meshOffset.y, part.meshOffset.z);
-      } else {
-        geom.translate(-center.x, -center.y, -center.z);
-        geom.scale(sourceSize.x > 1e-5 ? sx / sourceSize.x : 1, sourceSize.y > 1e-5 ? sy / sourceSize.y : 1, sourceSize.z > 1e-5 ? sz / sourceSize.z : 1);
-      }
+      applyMeshSizing(geom, part, sourceSize, center, { x: sx, y: sy, z: sz });
       if (!geom.hasAttribute("normal")) geom.computeVertexNormals();
 
       if (Array.isArray(mesh.material)) {
@@ -2272,7 +2265,7 @@ async function setupThree() {
   if (!occNdcTmp) occNdcTmp = new THREE.Vector3();
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(55, 16 / 9, 0.1, 6000);
+  const camera = new THREE.PerspectiveCamera(55, 16 / 9, 0.1, dbg.renderDistance);
   camera.position.set(18, 18, 28);
   camera.lookAt(0, 4, 0);
 
@@ -4500,6 +4493,15 @@ function repSet(mesh, p, alpha = 1, src = null) {
   replayPoseFrom.slerp(replayPoseTo, alpha);
   const rotated = Math.abs(mesh.quaternion.dot(replayPoseFrom)) < 0.999999;
   mesh.quaternion.copy(replayPoseFrom);
+  const studOverlay = mesh.userData?.studOverlay;
+  if (studOverlay) {
+    studOverlay.position.copy(mesh.position);
+    studOverlay.quaternion.copy(mesh.quaternion);
+    studOverlay.scale.copy(mesh.scale).multiplyScalar(1.002);
+    for (const material of Array.isArray(studOverlay.material) ? studOverlay.material : [studOverlay.material]) {
+      if (material?.map) material.opacity = 0.65 * (1 - Math.max(0, Math.min(1, Number(tr || 0))));
+    }
+  }
   if ((moved || rotated) && mesh.castShadow) shadowSceneDirty = true;
   if (mesh.material) {
     const matArr = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
@@ -4525,6 +4527,7 @@ function repNeedGeo(a, b) {
   if (String(a.meshType || "") !== String(b.meshType || "")) return true;
   if (String(a.rigType || "") !== String(b.rigType || "")) return true;
   if (JSON.stringify(a.meshScale || null) !== JSON.stringify(b.meshScale || null)) return true;
+  if (JSON.stringify(a.meshSize || null) !== JSON.stringify(b.meshSize || null)) return true;
   if (JSON.stringify(a.meshOffset || null) !== JSON.stringify(b.meshOffset || null)) return true;
   if (Number(a?.size?.x || 0) !== Number(b?.size?.x || 0)) return true;
   if (Number(a?.size?.y || 0) !== Number(b?.size?.y || 0)) return true;
@@ -4536,6 +4539,7 @@ function repNeedMat(a, b) {
   if (!a || !b) return true;
   if (String(a.color3 || "") !== String(b.color3 || "")) return true;
   if (String(a.material || "") !== String(b.material || "")) return true;
+  for (const face of ['topSurface', 'bottomSurface', 'leftSurface', 'rightSurface', 'frontSurface', 'backSurface']) if (a[face] !== b[face]) return true;
   if (String(a.textureId || "") !== String(b.textureId || "")) return true;
   if (Boolean(a.doubleSided) !== Boolean(b.doubleSided)) return true;
   if (JSON.stringify(a.meshVertexColor || null) !== JSON.stringify(b.meshVertexColor || null)) return true;
@@ -4835,7 +4839,7 @@ function repLoad(raw) {
   replayAudio = new ReplayAudio(raw?.soundEvents, path => partByPath.get(String(path || '')), message => {
     const status = document.getElementById('audioStatus');
     if (status) status.textContent = message;
-  });
+  }, { legacy: raw?.soundStateTracking !== 1 });
   replayAudio.setKindEnabled(false, replayAudioEnabled[2]);
   replayAudio.setKindEnabled(true, replayAudioEnabled[3]);
   repInterpolatedPaths.clear();
@@ -5186,6 +5190,8 @@ function updateTopbarMode() {
 }
 
 function syncDebugUi() {
+  const renderDistance = document.getElementById('renderDistance');
+  if (renderDistance) renderDistance.value = String(dbg.renderDistance);
   if (dbgShaders) dbgShaders.checked = dbg.shadersOn;
   if (dbgSmoothShadows) dbgSmoothShadows.checked = dbg.smoothShadows;
   if (dbgFps) dbgFps.checked = dbg.showFps;
@@ -5250,6 +5256,13 @@ function wireDebugMenu() {
     dbg.shadowRange = event.target.value;
     apShdwMd();
     updateShadowCoverage(performance.now(), true);
+  });
+  document.getElementById('renderDistance')?.addEventListener('change', event => {
+    const distance = Number(event.target.value);
+    if (![256, 512, 1024, 2048, 6000].includes(distance)) return;
+    dbg.renderDistance = distance;
+    if (three?.camera) { three.camera.far = distance; three.camera.updateProjectionMatrix(); }
+    try { localStorage.setItem('replayRenderDistance', String(distance)); } catch {}
   });
   document.getElementById('shadowQuality')?.addEventListener('change', event => {
     dbg.shadowQuality = event.target.value;

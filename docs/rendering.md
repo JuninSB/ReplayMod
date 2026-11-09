@@ -55,7 +55,11 @@ The viewer deduplicates asset requests and keeps successful results while rebuil
 
 Menu is collapsed on entry. Explorer, thumbnail capture, Rendering, Camera, Library and Share are inside it. FPS has its own position below the header. The scene movement hint is removed. All visible controls are in English.
 
-Solid-color parts keep their captured color when no material map is available; Neon uses emissive color. Recorded Studs/Inlet surfaces use the local DDS texture and fall back to a procedural stud pattern if a mobile browser cannot decode DDS. Menu → Hide UI hides the controls; Show UI restores them. Rendering → Scene brightness adjusts the viewer exposure relative to the capture. Interactive controls prevent touch text selection while diagnostic text stays selectable.
+Solid-color parts keep their captured color when no material map is available; Neon uses emissive color. Recorded Studs/Inlet surfaces use a neutral procedural square pattern tinted by the part color, with approximate relief and shadow reception; it avoids compressed DDS formats unsupported on some mobile GPUs. Menu → Hide UI hides the controls; Show UI restores them. Rendering → Scene brightness adjusts the viewer exposure relative to the capture. Interactive controls prevent touch text selection while diagnostic text stays selectable.
+
+Rendering → Render distance changes the camera far plane between 256 and 6000 studs, independently of shadow range. The preference is saved locally when storage is available. The scene state continues to advance beyond this distance. It cannot recover regions the Roblox client did not stream in or the recorder did not capture.
+
+New captures include MeshPart.MeshSize where accessible so the viewer can scale its source geometry around the asset origin. This improves placement but does not reproduce WrapLayer cage deformation or skinning: layered clothing can still intersect or be displaced on avatars.
 
 On compact viewports, the viewer caps its render resolution to 1×, disables antialiasing, uses a 1024-pixel soft shadow map, skips the post-processing composer when no recorded effect needs it, and refreshes the shadow map only when the scene or camera-shadow coverage changes. Mesh materials use front-side rendering and frustum culling; source mesh triangles are preserved rather than destructively simplified.
 

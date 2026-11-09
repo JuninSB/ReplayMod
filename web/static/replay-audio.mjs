@@ -18,9 +18,37 @@ export function soundOffsetAt(event, ms) {
   return event.looped && duration > 0 ? position % duration : position;
 }
 
+// Older captures missed state changes when games set Sound.Playing directly.
+// Bound inferred loops to one expected cycle and infer short one-shots only
+// from an observed end; never invent an unobserved asset or source.
+export function repairLegacySoundEvents(events) {
+  const original = [...(Array.isArray(events) ? events : [])].sort((a, b) => Number(a.t || 0) - Number(b.t || 0));
+  const byId = new Map(), inferred = [];
+  for (const event of original) {
+    if (!event?.id) continue;
+    const group = byId.get(event.id) || [];
+    group.push(event); byId.set(event.id, group);
+  }
+  for (const group of byId.values()) {
+    for (let i = 0; i < group.length; i++) {
+      const event = group[i], previous = group[i - 1], next = group[i + 1];
+      const durationMs = 1000 * (Number(event.timeLength) || 0) / Math.max(0.01, Number(event.playbackSpeed) || 1);
+      if (event.event === 'end' && !event.looped && durationMs > 0 && durationMs <= 30000 && (!previous || !previous.playing)) {
+        const start = Math.max(previous ? Number(previous.t) + 1 : 0, Number(event.t) - durationMs);
+        inferred.push({ ...event, t: start, event: 'inferred-play', playing: true, timePosition: 0 });
+      }
+      if (event.event === 'loop' && event.playing && durationMs > 0 && durationMs <= 30000) {
+        const expiry = Number(event.t) + durationMs + 250;
+        if (!next || Number(next.t) > expiry) inferred.push({ ...event, t: expiry, event: 'inferred-stop', playing: false });
+      }
+    }
+  }
+  return [...original, ...inferred].sort((a, b) => Number(a.t || 0) - Number(b.t || 0));
+}
+
 export class ReplayAudio {
-  constructor(events, resolvePart, report = () => {}) {
-    this.events = [...(Array.isArray(events) ? events : [])].sort((a, b) => Number(a.t || 0) - Number(b.t || 0));
+  constructor(events, resolvePart, report = () => {}, options = {}) {
+    this.events = options.legacy ? repairLegacySoundEvents(events) : [...(Array.isArray(events) ? events : [])].sort((a, b) => Number(a.t || 0) - Number(b.t || 0));
     this.resolvePart = resolvePart;
     this.report = report;
     this.nodes = new Map();
@@ -74,7 +102,7 @@ export class ReplayAudio {
   }
   sync(ms, playing, speed, camera, now, force = false) {
     if (!this.context || !this.enabled || !playing) { for (const node of this.nodes.values()) node.audio.pause(); return; }
-    if (!force && now - this.lastSync < 200) return;
+    if (!force && now - this.lastSync < 50) return;
     this.lastSync = now;
     const states = this.statesAt(ms);
     for (const [id, node] of this.nodes) if (!states.has(id) || !states.get(id).playing) {

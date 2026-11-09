@@ -15,7 +15,7 @@
     <script type="importmap">
       {
         "imports": {
-          "three": "/static/vendor/three/build/three.module.js",
+          "three": "/static/vendor/three/build/three.module.js?v=r187-1",
           "three/addons/": "/static/vendor/three/examples/jsm/"
         }
       }
@@ -106,6 +106,16 @@
               <span>Scene brightness</span>
               <input id="sceneBrightness" type="range" min="0.5" max="3" step="0.05" value="1" />
               <span id="sceneBrightnessValue">1.00×</span>
+            </label>
+            <label class="debug-item debug-range">
+              <span>Render distance</span>
+              <select id="renderDistance" aria-label="Render distance">
+                <option value="256">256 studs</option>
+                <option value="512">512 studs</option>
+                <option value="1024">1024 studs</option>
+                <option value="2048">2048 studs</option>
+                <option value="6000" selected>6000 studs</option>
+              </select>
             </label>
             <label class="debug-item debug-range">
               <span>Shadow range</span>

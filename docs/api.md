@@ -30,6 +30,8 @@ Each frame has `t` in milliseconds and optional `a` (added parts), `u` (updates)
 
 New replay captures can include `soundEvents` ordered by replay time. Each sound event records its local ID, action, `soundId`, playing state, time position and length, volume, playback speed, looping, rolloff settings, and optional parent-part ID and attachment offset. These are observations from the recording client, not guaranteed access to every server-side sound.
 
+`soundStateTracking: 1` identifies captures that periodically observe Sound playing-state transitions, including property-driven starts and stops. Older recordings can be played with best-effort inferences for missing loop stops and completed short sounds; these do not reconstruct unrecorded events exactly. New MeshPart records can include `meshSize` to describe the source mesh dimensions.
+
 Optional `base.screenGui` and `frames[].screenGui` describe the local client's sampled ScreenGui state; snapshots use `screenGui` at the top level. Each state has the recorded viewport dimensions and screen/item data. ScreenGui image texture references are eligible for offline export.
 
 Malformed JSON, a non-object payload, and invalid URL-encoded `replayId` values return 400. Snapshots using the legacy `__transport:"compact-v1"` representation are expanded before persistence. Snapshot, thumbnail, and cleanup routes remain for older captures.

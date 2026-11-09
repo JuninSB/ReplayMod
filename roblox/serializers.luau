@@ -127,6 +127,8 @@ local function partData(p, stablePath)
         data.meshId = tostring(p.MeshId)
         data.textureId = tostring(p.TextureID)
         data.doubleSided = p.DoubleSided
+        local okSize, meshSize = pcall(function() return p.MeshSize end)
+        if okSize and meshSize then data.meshSize = v3(meshSize) end
     end
     local special = p:FindFirstChildOfClass("SpecialMesh")
     if special then

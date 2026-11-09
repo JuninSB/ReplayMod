@@ -53,6 +53,41 @@ test("sound events reconstruct seek position, looping and stopping", async () =>
   assert.equal(player.statesAt(1000).size, 1);
 });
 
+test("older sound recordings infer short endings and expire missing loop stops", async () => {
+  const { repairLegacySoundEvents, soundStatesAt } = await import('../web/static/replay-audio.mjs');
+  const repaired = repairLegacySoundEvents([
+    { id: 'jump', t: 1000, event: 'end', playing: false, soundId: 'jump', timeLength: 0.3, playbackSpeed: 1 },
+    { id: 'walk', t: 1200, event: 'loop', playing: true, looped: true, soundId: 'walk', timeLength: 2, playbackSpeed: 2 },
+  ]);
+  assert.equal(soundStatesAt(repaired, 800).get('jump').playing, true);
+  assert.equal(soundStatesAt(repaired, 1100).has('jump'), false);
+  assert.equal(soundStatesAt(repaired, 2000).get('walk').playing, true);
+  assert.equal(soundStatesAt(repaired, 2500).get('walk').playing, false);
+});
+
+test("MeshPart source dimensions preserve geometry origin when sizing", async () => {
+  const { applyMeshSizing } = await import('../web/static/mesh-sizing.mjs');
+  const THREE = require('three');
+  const geometry = new THREE.BoxGeometry(2, 2, 2).translate(2, 0, 0);
+  applyMeshSizing(geometry, { meshSize: { x: 4, y: 2, z: 2 } }, { x: 2, y: 2, z: 2 }, { x: 2, y: 0, z: 0 }, { x: 8, y: 2, z: 2 });
+  geometry.computeBoundingBox();
+  assert.equal(geometry.boundingBox.min.x, 2);
+  assert.equal(geometry.boundingBox.max.x, 6);
+});
+
+test("stud surface tint follows recorded part color", () => {
+  const THREE = require('three');
+  const source = readFileSync(path.join(__dirname, '../web/static/app.js'), 'utf8');
+  const context = vm.createContext({ THREE, three: { renderer: { capabilities: { getMaxAnisotropy: () => 1 } } }, toNum: (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback, hexColor: value => value });
+  vm.runInContext(source.slice(source.indexOf('function isStudFace('), source.indexOf('function isPlasticMat(')) + source.slice(source.indexOf('function makeStudsFaceMats('), source.indexOf('function boxFaceRepeats(')), context);
+  context.part = { color3: '#e05030', transparency: 0, size: { x: 4, y: 1, z: 4 }, topSurface: 'Enum.SurfaceType.Studs' };
+  context.texture = new THREE.Texture();
+  const materials = vm.runInContext('makeStudsFaceMats({}, part, texture)', context);
+  assert.equal(materials[2].color.getHexString(), 'e05030');
+  assert.ok(materials[2].opacity > 0);
+  assert.equal(materials[0].opacity, 0);
+});
+
 test("viewer edits keep invisible objects visible across playback updates without modifying recorded state", async () => {
   const { applyViewerOverrides } = await import('../web/static/viewer-overrides.mjs');
   const THREE = require('three');
