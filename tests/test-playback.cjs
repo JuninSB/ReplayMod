@@ -6,6 +6,34 @@ const { readFileSync } = require("node:fs");
 const { spawnSync } = require("node:child_process");
 const vm = require("node:vm");
 
+test("backward seek rebuilds the scene once after reconstructing replay state", () => {
+  const source = readFileSync(path.join(__dirname, '../web/static/app.js'), 'utf8');
+  const counts = { builds: 0, updates: 0 };
+  const context = vm.createContext({ repMs: 9000, repMap: null, replayExplorerDirty: false, repRun: false, repSpeed: 1, replayAudio: null, three: null, performance: { now: () => 0 }, screenGuiView: { render() {} }, resetReplayDecalIndex() {}, repBuild() { counts.builds++; }, repDraw() {}, repUpd() { counts.updates++; }, repDat: { map: new Map(), screenGui: null, seek(ms, callbacks) { callbacks.onReset(); callbacks.onChange({ type: 'update', part: {} }); return ms; } } });
+  vm.runInContext(source.slice(source.indexOf('function repSeek('), source.indexOf('function repTick(')), context);
+  vm.runInContext('repSeek(1000, true)', context);
+  assert.equal(counts.builds, 1);
+  assert.equal(counts.updates, 0);
+  assert.equal(context.repMs, 1000);
+});
+
+test("playback buffers new assets and resumes after loading completes", () => {
+  const source = readFileSync(path.join(__dirname, '../web/static/app.js'), 'utf8');
+  let pending = 1, scheduled = 0, pauses = 0;
+  const element = { hidden: false, textContent: '', value: 0, replaceChildren() {}, appendChild() {} };
+  const context = vm.createContext({ ensureHUD() {}, renderStatusEl: {}, assetProgressDismissed: false, renderStage: '', assetLoads: { summary: () => ({ mesh: { ready: 0, total: 1 }, texture: { ready: 0, total: 0 }, pending, failures: [] }) }, repDat: {}, repRun: true, replayResumeWhenReady: false, replayInitialLoading: false, repAnimation: 0, repLast: 0, repMs: 100, repSpeed: 1, three: null, replayAudio: { sync: (_ms, playing) => { if (!playing) pauses++; } }, cancelAnimationFrame() {}, requestAnimationFrame() { scheduled++; return scheduled; }, repTick() {}, repUiSync() {}, performance: { now: () => 0 }, document: { getElementById: () => element, createElement: () => ({}) } });
+  vm.runInContext(source.slice(source.indexOf('function renderAssetProgress('), source.indexOf('function ensureFpsHUD(')), context);
+  context.renderAssetProgress();
+  assert.equal(context.repRun, false);
+  assert.equal(context.replayResumeWhenReady, true);
+  assert.equal(pauses, 1);
+  pending = 0;
+  context.renderAssetProgress();
+  assert.equal(context.repRun, true);
+  assert.equal(context.replayResumeWhenReady, false);
+  assert.equal(scheduled, 1);
+});
+
 test("Termux launcher keeps localhost default and accepts an explicit remote address", () => {
   const fs = require('node:fs');
   const os = require('node:os');

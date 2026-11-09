@@ -114,6 +114,10 @@ let repChatRenderedData = null;
 let repChatRenderedCount = -1;
 let repMs = 0;
 let repRun = false;
+let replayInitialLoading = false;
+let replayResumeWhenReady = false;
+let replayScrubbing = false;
+let replayResumeAfterScrub = false;
 let followRecordedCamera = false;
 let repSpeed = 1;
 let sceneLoad = 0;
@@ -374,6 +378,21 @@ function renderAssetProgress() {
   ensureHUD();
   if (!renderStatusEl) return;
   const {mesh, texture, pending, failures} = assetLoads.summary();
+  if (repDat && repRun && pending > 0) {
+    replayResumeWhenReady = true; replayInitialLoading = true; repRun = false;
+    cancelAnimationFrame(repAnimation); repLast = 0;
+    replayAudio?.sync(repMs, false, repSpeed, three?.camera, performance.now(), true);
+    repUiSync();
+  }
+  if (replayInitialLoading && pending === 0) {
+    replayInitialLoading = false;
+    if (replayResumeWhenReady && repDat) {
+      replayResumeWhenReady = false; repRun = true; repLast = 0;
+      replayAudio?.sync(repMs, true, repSpeed, three?.camera, performance.now(), true);
+      repAnimation = requestAnimationFrame(repTick);
+    }
+    repUiSync();
+  }
   const total = mesh.total + texture.total, ready = mesh.ready + texture.ready;
   const hasStatus = Boolean(renderStage || pending || failures.length);
   renderStatusEl.hidden = assetProgressDismissed || !hasStatus;
@@ -4095,6 +4114,7 @@ async function loadList() {
 
 function showLanding() {
   replayAudio?.dispose();
+  replayResumeWhenReady = false; replayInitialLoading = false;
   screenGuiView.render(null);
   sceneLoad += 1;
   displayedSceneKey = "";
@@ -4728,10 +4748,16 @@ function repUiSync() {
   if (!repDat) return;
   if (replaySeek) {
     replaySeek.max = String(Math.max(1, Math.floor(repDat.dur)));
-    replaySeek.value = String(Math.floor(repMs));
+    if (!replayScrubbing) {
+      replaySeek.value = String(Math.floor(repMs));
+      replaySeek.setAttribute('aria-valuetext', `${fmtMs(repMs)} of ${fmtMs(repDat.dur)}`);
+    }
   }
-  if (replayTime) replayTime.textContent = `${fmtMs(repMs)} / ${fmtMs(repDat.dur)}`;
-  if (replayPlayBtn) replayPlayBtn.textContent = repRun ? "Pause" : "Play";
+  if (replayTime && !replayScrubbing) replayTime.textContent = `${fmtMs(repMs)} / ${fmtMs(repDat.dur)}`;
+  if (replayPlayBtn) {
+    replayPlayBtn.disabled = replayInitialLoading;
+    replayPlayBtn.textContent = replayInitialLoading ? "Loading…" : repRun ? "Pause" : "Play";
+  }
 }
 
 function repDraw(force = false) {
@@ -4787,8 +4813,10 @@ function repDraw(force = false) {
 
 function repSeek(ms, force = false) {
   if (!repDat) return;
+  const rebuild = Number(ms) < repMs || Math.abs(Number(ms) - repMs) > 1000;
   repMs = repDat.seek(ms, {
     onReset() {
+      if (rebuild) return;
       screenGuiView.render(repDat.screenGui);
       repMap = repDat.map;
       resetReplayDecalIndex();
@@ -4796,6 +4824,7 @@ function repSeek(ms, force = false) {
       repBuild(false);
     },
     onChange(change) {
+      if (rebuild) return;
       if (change.type === "add") { replayExplorerDirty = true; repAdd(change.part, change.index); }
       else if (change.type === "update") {
         if (change.patch && ['name', 'instancePath', 'className', 'characterName', 'childInstances'].some(key => key in change.patch)) replayExplorerDirty = true;
@@ -4813,6 +4842,13 @@ function repSeek(ms, force = false) {
       }
     },
   });
+  if (rebuild) {
+    repMap = repDat.map;
+    resetReplayDecalIndex();
+    replayExplorerDirty = true;
+    screenGuiView.render(repDat.screenGui);
+    repBuild(false);
+  }
   repDraw(force);
   replayAudio?.sync(repMs, repRun, repSpeed, three?.camera, performance.now(), force);
 }
@@ -4831,11 +4867,12 @@ function repTick(now) {
     repUiSync();
     return;
   }
-  repAnimation = requestAnimationFrame(repTick);
+  if (repRun) repAnimation = requestAnimationFrame(repTick);
 }
 
 function repLoad(raw) {
   cancelAnimationFrame(repAnimation);
+  replayResumeWhenReady = false; replayInitialLoading = false;
   viewerOverrides.clear();
   const resetEdits = document.getElementById('resetViewerEdits');
   if (resetEdits) resetEdits.hidden = true;
@@ -4863,6 +4900,7 @@ function repLoad(raw) {
   replayExplorerSignature = "";
   repRst();
   repBuild(true);
+  replayInitialLoading = assetLoads.summary().pending > 0;
   repDraw(true);
 }
 
@@ -4947,6 +4985,7 @@ async function loadCur() {
 
 async function loadSnapshot() {
   assetProgressDismissed = false;
+  replayResumeWhenReady = false; replayInitialLoading = false;
   replayAudio?.dispose();
   const loadId = ++sceneLoad;
   displayedSceneKey = "";
@@ -5601,10 +5640,30 @@ if (replayPlayBtn) {
 if (replaySeek) {
   replaySeek.addEventListener("input", () => {
     if (!repDat) return;
+    if (!replayScrubbing) { replayScrubbing = true; replayResumeAfterScrub = repRun; }
     repRun = false;
     cancelAnimationFrame(repAnimation);
     repLast = 0;
+    repUiSync();
+    replayAudio?.sync(repMs, false, repSpeed, three?.camera, performance.now(), true);
+    if (replayTime) replayTime.textContent = `${fmtMs(Number(replaySeek.value || 0))} / ${fmtMs(repDat.dur)}`;
+    replaySeek.setAttribute('aria-valuetext', `${fmtMs(Number(replaySeek.value || 0))} of ${fmtMs(repDat.dur)}`);
+  });
+  replaySeek.addEventListener("change", () => {
+    if (!repDat) return;
+    const resume = replayResumeAfterScrub;
+    replayScrubbing = false; replayResumeAfterScrub = false;
     repSeek(Number(replaySeek.value || 0), true);
+    if (resume) {
+      replayAudio?.unlock();
+      if (assetLoads.summary().pending > 0) {
+        replayInitialLoading = true; replayResumeWhenReady = true; repUiSync();
+      } else {
+        repRun = true; repLast = 0;
+        replayAudio?.sync(repMs, true, repSpeed, three?.camera, performance.now(), true);
+        repUiSync(); repAnimation = requestAnimationFrame(repTick);
+      }
+    }
   });
 }
 

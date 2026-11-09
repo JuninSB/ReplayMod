@@ -844,7 +844,20 @@ body.is-viewer #replaySeek {
   grid-area: seek;
   width: 100%;
   min-width: 70px;
+  accent-color: #7ce6bd;
+  cursor: pointer;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
+body.is-viewer #replaySeek::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; background: #566675; }
+body.is-viewer #replaySeek::-webkit-slider-thumb { appearance: none; width: 20px; height: 20px; margin-top: -7px; border-radius: 50%; background: #7ce6bd; border: 2px solid #171c23; }
+body.is-viewer #replaySeek::-moz-range-track { height: 6px; border-radius: 999px; background: #566675; }
+body.is-viewer #replaySeek::-moz-range-thumb { width: 17px; height: 17px; border-radius: 50%; background: #7ce6bd; border: 2px solid #171c23; }
+body.is-viewer #replaySeek:focus-visible { outline: 2px solid #7ce6bd; outline-offset: 4px; }
+body.is-viewer #replayPlayBtn:disabled { opacity: 0.7; cursor: progress; }
+body.is-viewer .replay-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
 body.is-viewer .speed-label {
   grid-area: speed;
   white-space: nowrap;
