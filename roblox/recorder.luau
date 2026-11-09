@@ -128,16 +128,40 @@ send.Visible = false
 local status = control("TextLabel", "Incremental replay capture · 20 ticks/s", 28)
 status.TextWrapped = true
 status.BackgroundTransparency = 1
+local transferProgress = Instance.new("Frame")
+transferProgress.Size = UDim2.new(1, 0, 0, 8)
+transferProgress.BackgroundColor3 = Color3.fromRGB(42, 50, 61)
+transferProgress.BorderSizePixel = 0
+transferProgress.Visible = false
+transferProgress.Parent = panel
+Instance.new("UICorner", transferProgress).CornerRadius = UDim.new(1, 0)
+local transferFill = Instance.new("Frame")
+transferFill.Size = UDim2.new(0, 0, 1, 0)
+transferFill.BackgroundColor3 = Color3.fromRGB(49, 174, 119)
+transferFill.BorderSizePixel = 0
+transferFill.Parent = transferProgress
+Instance.new("UICorner", transferFill).CornerRadius = UDim.new(1, 0)
 local discard = control("TextButton", "Discard capture", 28)
 discard.Visible = false
 local close = control("TextButton", "Close", 28)
-local fields = {modeSelector, code, nameInput, ticks, action, send, discard, status, close}
+local fields = {modeSelector, code, nameInput, ticks, action, send, discard, status, transferProgress, close}
 local captured, encodedChunks = nil, nil
 local frameBuffer, frameBufferBytes = {}, 0
 local minimized = false
 local keepPanelOnScreen
 local recording, busy, disposed, preparing, paused = false, false, false, false, false
 local pausedAt, pausedTotal = 0, 0
+local function setTransferProgress(sent, total, failed)
+    transferProgress.Visible = true
+    local fraction = total and total > 0 and math.clamp(sent / total, 0, 1) or 0
+    transferFill.Size = UDim2.new(fraction, 0, 1, 0)
+    transferFill.BackgroundColor3 = failed and Color3.fromRGB(211, 82, 74) or Color3.fromRGB(49, 174, 119)
+end
+local function clearTransferProgress()
+    transferProgress.Visible = false
+    transferFill.Size = UDim2.new(0, 0, 1, 0)
+    transferFill.BackgroundColor3 = Color3.fromRGB(49, 174, 119)
+end
 local function updateCaptureMode()
     local isReplay = captureMode == "replay"
     replayModeButton.BackgroundColor3 = isReplay and Color3.fromRGB(30, 108, 82) or Color3.fromRGB(33, 40, 50)
@@ -946,6 +970,7 @@ local function chunksForCapture()
     if encodedChunks then return encodedChunks end
     flushFrameBuffer()
     status.Text = "Preparing upload chunks…"
+    setTransferProgress(0, 1)
     diagnostic("preparing upload chunks")
     local chunks, current = {}, ""
     local function append(text)
@@ -976,7 +1001,8 @@ local function chunksForCapture()
             if i % 20 == 0 then task.wait() end
         end
         append('],"camera":' .. (captured.base.camera and hs:JSONEncode(captured.base.camera) or "null")
-            .. ',"lighting":' .. hs:JSONEncode(captured.base.lighting) .. '}')
+            .. ',"lighting":' .. hs:JSONEncode(captured.base.lighting)
+            .. ',"terrain":' .. (captured.base.terrain and hs:JSONEncode(captured.base.terrain) or "null") .. '}')
     else
         append('{"serverId":' .. hs:JSONEncode(captured.serverId) .. ',"placeId":' .. hs:JSONEncode(captured.placeId)
             .. ',"replayName":' .. hs:JSONEncode(captured.replayName) .. ',"stepMs":' .. tostring(captured.stepMs) .. ',"captureFps":' .. tostring(captured.captureFps) .. ',"tickChanges":' .. hs:JSONEncode(captured.tickChanges) .. ',"durationMs":'
@@ -991,7 +1017,8 @@ local function chunksForCapture()
             if i % 20 == 0 then task.wait() end
         end
         append('],"camera":' .. (captured.base.camera and hs:JSONEncode(captured.base.camera) or "null")
-            .. ',"lighting":' .. hs:JSONEncode(captured.base.lighting) .. '},"frameBlocks":[')
+            .. ',"lighting":' .. hs:JSONEncode(captured.base.lighting)
+            .. ',"terrain":' .. (captured.base.terrain and hs:JSONEncode(captured.base.terrain) or "null") .. '},"frameBlocks":[')
         for i, block in ipairs(captured.frameBlocks) do
             append((i > 1 and "," or "") .. hs:JSONEncode(block))
             if i % 20 == 0 then task.wait() end
@@ -1007,7 +1034,11 @@ local function uploadByHttpGet(chunks, sid, kind)
     diagnostic("local GET fallback started")
     if not isLoopbackBase(REPLAY_BASE_URL) then error("HTTP GET fallback is only available on localhost.") end
     local function pieceEnd(chunk, at)
-        local last = math.min(#chunk, at + 3500 - 1)
+        -- Roblox's local HttpGet accepts a substantially larger URL than the
+        -- previous 3.5 KB slice.  Fewer requests matter more than a tiny
+        -- per-request saving: a 60-tick replay was creating thousands of
+        -- calls and some Android executors stop servicing them mid-upload.
+        local last = math.min(#chunk, at + 6000 - 1)
         if last < #chunk then
             while last >= at and string.byte(chunk, last + 1) >= 128 and string.byte(chunk, last + 1) <= 191 do last -= 1 end
         end
@@ -1023,6 +1054,7 @@ local function uploadByHttpGet(chunks, sid, kind)
     end
     local uploadId = hs:GenerateGUID(false)
     diagnostic("local GET pieces=" .. tostring(total))
+    setTransferProgress(0, total)
     local result
     local index = 0
     for _, chunk in ipairs(chunks) do
@@ -1034,14 +1066,23 @@ local function uploadByHttpGet(chunks, sid, kind)
             local url = REPLAY_BASE_URL .. route .. "?uploadId=" .. hs:UrlEncode(uploadId)
                 .. "&serverId=" .. hs:UrlEncode(sid) .. "&chunkIndex=" .. tostring(index)
                 .. "&totalChunks=" .. tostring(total) .. "&chunkData=" .. hs:UrlEncode(piece)
-            local ok, body = pcall(function() return game:HttpGet(url, true) end)
-            if not ok then error("Local HttpGet failed: " .. tostring(body)) end
+            local ok, body
+            for attempt = 1, 4 do
+                ok, body = pcall(function() return game:HttpGet(url, true) end)
+                if ok then break end
+                diagnostic("local GET retry=" .. tostring(attempt) .. " piece=" .. tostring(index + 1) .. "/" .. tostring(total) .. " error=" .. tostring(body))
+                status.Text = string.format("Local transfer paused; retrying %d/%d…", index + 1, total)
+                setTransferProgress(index, total)
+                task.wait(attempt)
+            end
+            if not ok then error("Local HttpGet failed at piece " .. tostring(index + 1) .. "/" .. tostring(total) .. ": " .. tostring(body)) end
             local decodedOk, data = pcall(function() return hs:JSONDecode(body) end)
             if not decodedOk or type(data) ~= "table" then error("Local HttpGet response: " .. tostring(body):sub(1, 150)) end
             if data.error then error(tostring(data.error)) end
             result = data
             index += 1
             at = last + 1
+            setTransferProgress(index, total)
             if index % 25 == 0 or index == total then
                 diagnostic("local GET sent=" .. tostring(index) .. "/" .. tostring(total))
                 status.Text = string.format("Sending locally %d/%d (%.0f%%)", index, total, index / total * 100)
@@ -1058,13 +1099,17 @@ local function upload()
     local endpoint = kind == "snapshot" and "/api/snapshot/chunk" or "/api/replay/chunk"
     local expectedId = kind == "snapshot" and "serverId" or "replayId"
     local expectedName = kind == "snapshot" and "snapshotName" or "replayName"
-    status.Text = "Authenticating…"
+    status.Text = isLoopbackBase(REPLAY_BASE_URL) and "Preparing local transfer…" or "Authenticating…"
     task.wait()
     local token, useLocalGet = nil, false
     if isLoopbackBase(REPLAY_BASE_URL) then
-        local authenticated, reply = pcall(authenticate, "/api/auth/local", {serverId = sid})
-        if authenticated then token = reply.uploadToken
-        else useLocalGet = true; status.Text = "POST unavailable; preparing local transfer…" end
+        -- Some Android executors keep local POST requests open for over a
+        -- minute even after this server returned 200.  The loopback-only GET
+        -- route is intentionally provided for that case, so select it before
+        -- making a POST that cannot be cancelled from Luau.
+        useLocalGet = true
+        status.Text = "Preparing local transfer…"
+        diagnostic("using loopback GET transfer")
     else
         local accessCode = code.Text:gsub("%D", "")
         if #accessCode ~= 20 then
@@ -1106,6 +1151,7 @@ local function upload()
     if not result or not result.ok or not result[expectedId] then error("The server did not confirm the upload.") end
     diagnostic("upload completed")
     status.Text = "Saved: " .. tostring(result[expectedName] or (kind == "snapshot" and "Snapshot" or "Replay"))
+    clearTransferProgress()
     captured, encodedChunks = nil, nil
     send.Visible = false
     discard.Visible = false
@@ -1146,6 +1192,7 @@ connections[#connections + 1] = action.Activated:Connect(function()
             captured, encodedChunks = nil, nil
             send.Visible = false
             discard.Visible = false
+            clearTransferProgress()
         else
             status.Text = "Send or discard the current replay before starting another."
             return
@@ -1172,8 +1219,10 @@ connections[#connections + 1] = send.Activated:Connect(function()
         busy = false
         send.Text = captureMode == "snapshot" and "Send snapshot" or "Send replay"
         if not ok then
-            diagnostic("upload failed; see recorder status")
-            status.Text = tostring(err)
+            local message = tostring(err)
+            diagnostic("upload failed: " .. message)
+            status.Text = "Upload failed: " .. message
+            setTransferProgress(transferFill.Size.X.Scale, 1, true)
             send.Visible = not minimized
         end
     end)
@@ -1183,6 +1232,7 @@ connections[#connections + 1] = discard.Activated:Connect(function()
     if recording then recording = false end
     captured, encodedChunks = nil, nil
     frameBuffer, frameBufferBytes = {}, 0
+    clearTransferProgress()
     send.Visible = false
     discard.Visible = false
     updateCaptureMode()

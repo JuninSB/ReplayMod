@@ -31,7 +31,7 @@ Back up `web/data/` if you want to preserve captures. Asset Delivery cache files
 The server writes upload and authentication request stages, HTTP status codes and durations to `replaymod-server.log`. The recorder writes `replaymod-client.log` in the executor's workspace when `writefile` and `appendfile` are available; it starts a fresh client log each time the recorder is loaded. If file access is unavailable, it warns in the executor console. The diagnostic logs omit request bodies, replay data, codes and tokens. Server logs grow until manually removed or rotated.
 
 - If port 8000 is occupied, choose another `SERVER_WEBVIEW_PORT` and update both browser and executor URLs.
-- If the executor cannot send a replay, confirm it can reach the configured base URL and supports the recorder's HTTP transport.
+- If the executor cannot send a replay, confirm it can reach the configured base URL and inspect `replaymod-client.log`. Same-device uploads use the loopback GET route, show their piece counter, and retry a failed piece up to four times; a final error includes the piece number and executor error.
 - If an asset is missing, check network access, asset permissions, optional server-side credentials, and server logs. A missing cache is expected on first use.
 - `/health` reports whether the Node server is responding.
 

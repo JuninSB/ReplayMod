@@ -10,7 +10,7 @@ Replay Mod records the scene replicated to a Roblox client, sends captures to a 
 | Record replay | Recorder panel | Initial scene plus deltas for created, changed, and removed parts and decals | Sampling failure stops capture and reports an error |
 | Pause and resume | Recorder panel | Paused time is excluded; sampling resumes from current state | Preparation state prevents duplicate actions |
 | Capture snapshot | Recorder panel | One scene state is stored without a replay timeline | Failed upload keeps the capture available for retry |
-| Upload | Recorder panel | Server persists the capture and confirms its ID | Failed upload preserves the capture and shows an actionable error |
+| Upload | Recorder panel | Server persists the capture and confirms its ID; local transfer shows a piece counter and progress bar | Failed upload preserves the capture and shows an actionable error |
 | Open library | Web viewer | Replays and snapshots appear in separate collections | Empty state and network error are distinct |
 | Play | Web viewer | Deltas, camera, timeline, and playback speed stay in sync | Missing assets retain geometry fallbacks where possible |
 

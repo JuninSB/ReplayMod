@@ -10,7 +10,7 @@ Default base URL: `http://127.0.0.1:8000`. Error responses use `{ "error": "mess
 | `POST /api/auth/redeem` | Redeem LAN code | `{code,serverId}` | `{ticket,expiresInSeconds:90}` |
 | `POST /api/auth/exchange` | Exchange ticket | `{ticket,serverId}` | `{uploadToken,expiresInSeconds:3600}` |
 | `POST /api/replay/chunk` | Authenticated replay chunk | `X-Upload-Token`, `uploadId`, `serverId`, `chunkIndex`, `totalChunks`, `chunkData` | Partial status or `{ok,replayId,replayName}` |
-| `GET /api/replay/local-chunk` | Loopback chunk fallback | Same fields in query, without token | Partial status or confirmation |
+| `GET /api/replay/local-chunk` | Loopback replay chunk upload | Same fields in query, without token; accepted only from loopback | Partial status or confirmation |
 | `POST /api/replay` | Complete replay upload | Token and replay JSON | `{ok,replayId,replayName}` |
 | `GET /api/replays` | Replay library | None | `{replays:[...]}`; rows include `captureFps`, `stepMs`, and `tickChanges` when recorded, for the configured TPS badge |
 | `GET /api/replay/latest?replayId=...` | Load replay | Optional ID | Persisted replay payload |
@@ -23,7 +23,7 @@ The mesh proxy converts FileMesh versions 1.00, 1.01, 2.00, 3.00, 3.01, 4.00, 4.
 
 New captures store Lighting properties including `brightness`, `clockTime`, `ambient`, `outdoorAmbient`, `fogColor`, `fogStart`, `fogEnd`, `exposureCompensation`, `globalShadows`, `sunDirection`, and, when present, Atmosphere color, decay, density, haze, and glare. Older captures use viewer defaults for missing fields.
 
-`chunkIndex` starts at 0. Upload chunks carry JSON text; frame compression is expanded on the server before persistence. A capture may include `frameBlocks:[{codec:"json"|"lz4",data,originalBytes?}]`; the transport also accepts legacy `codec:"lz4"` blocks. Chunks for one `uploadId` must agree on `serverId` and `totalChunks`; conflicting duplicate content returns 409. A complete replay requires `serverId`, `base.parts`, `frames` ordered by `t`, and a valid `durationMs`.
+`chunkIndex` starts at 0. Upload chunks carry JSON text; frame compression is expanded on the server before persistence. A capture may include `frameBlocks:[{codec:"json"|"lz4",data,originalBytes?}]`; the transport also accepts legacy `codec:"lz4"` blocks. Same-device recorder uploads use the loopback GET route because some Android executors block local POST responses; it uses 6 KB pieces and retries a transient failed piece up to four times. Chunks for one `uploadId` must agree on `serverId` and `totalChunks`; conflicting duplicate content returns 409. A complete replay requires `serverId`, `base.parts`, `frames` ordered by `t`, and a valid `durationMs`.
 
 Each frame has `t` in milliseconds and optional `a` (added parts), `u` (updates), `d` (removed part IDs), `da` (added decals), `du` (updated decals), and `dd` (removed decal IDs). Decals use stable `id` and `partPath` values; an update can omit properties to retain the previous value. To clear `meshId` or `textureId`, send an empty string. Send `false` to clear `meshScale`, `meshOffset`, or `surfaceAppearance`.
 

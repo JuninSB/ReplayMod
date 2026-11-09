@@ -323,7 +323,14 @@ test("Node server accepts chunked replays and enforces local authentication", as
       replayId: "test-replay",
       captureFps: 60,
       stepMs: 1000 / 60,
-      base: { parts: [] },
+      base: {
+        parts: [],
+        terrain: {
+          cellSize: 4,
+          origin: { x: 0, y: 0, z: 0 },
+          cells: [{ x: 0, y: 0, z: 0, m: "Pebble", o: 255 }],
+        },
+      },
       durationMs: 200,
       frames: [{ t: 200, a: [], u: [], d: [] }],
     };
@@ -351,6 +358,7 @@ test("Node server accepts chunked replays and enforces local authentication", as
       await fetch(base + "/api/replay/latest?replayId=test-replay")
     ).json();
     assert.equal(loaded.frames.length, 1);
+    assert.equal(loaded.base.terrain.cells[0].m, "Pebble");
     const library = await (await fetch(base + "/api/replays")).json();
     assert.equal(library.replays.find((row) => row.replayId === "test-replay").captureFps, 60);
     const frameJson = JSON.stringify([{ t: 100, a: [], u: [], d: [], da: [

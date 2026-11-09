@@ -32,7 +32,7 @@ Keep the server running while recording or viewing captures. `./start.sh` (Unix/
 
 ### Capture login and upload token
 
-For browser and Roblox on the same device, keep the default `127.0.0.1` address. The recorder obtains a short-lived upload token from the local server automatically; you do not create or copy a token.
+For browser and Roblox on the same device, keep the default `127.0.0.1` address. The recorder uses the server's loopback-only chunk route directly; you do not create, copy, or expose an upload token. LAN uploads still use the temporary login-code flow below.
 
 For Roblox on a phone and Replay Mod on another computer on the same trusted Wi-Fi network, create `web/.env` from `web/.env.example`, then set the server computer's LAN address. For example:
 
