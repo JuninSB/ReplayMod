@@ -1082,6 +1082,13 @@ body.is-viewer .viewer-menu {
 body.is-viewer .viewer-menu[hidden] {
   display: none;
 }
+body.is-viewer .viewer-menu-heading {
+  grid-column: 1 / -1;
+  color: #aab5c4;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 2px 0;
+}
 body.is-viewer .viewer-menu #mobileToolsBtn {
   display: none !important;
 }

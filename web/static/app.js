@@ -148,11 +148,11 @@ const materialTextureCache = new Map();
 const clothingTextureCache = new Map();
 const materialPbrMapCache = new Map();
 const USE_LEGACY_MAT_TEX = false;
-const OCC_RT_MS = 14;
-const OCC_MAX_OCCLUSION_TESTS = 140;
+const OCC_RT_MS = 250;
+const OCC_MAX_OCCLUSION_TESTS = 24;
 const OCC_EDGE_GUARD = 0.9;
-const OCC_HIDE_CONFIRM = 1;
-const OCC_HOLD_VISIBLE_MS = 0;
+const OCC_HIDE_CONFIRM = 2;
+const OCC_HOLD_VISIBLE_MS = 500;
 const OCC_FULLY_HIDDEN_POINTS = 9;
 const MESH_CHUNK_ON = false;
 const MESH_CHUNK_TRI_THRESHOLD = 2200;
@@ -691,7 +691,9 @@ function apShdwMd() {
     rstShMap(three.dir);
   }
   if (dbg.smoothShadows) {
-    three.dir.shadow.radius = 0.5 + Math.max(0,Math.min(1,toNum(latestSnapshot?.lighting?.shadowSoftness,0.5))) * 4;
+    const softness = Math.max(0, Math.min(1, toNum(latestSnapshot?.lighting?.shadowSoftness, 0.5)));
+    const qualityBlur = { near: 1.4, medium: 1, far: 0.8 }[dbg.shadowRange] || 1;
+    three.dir.shadow.radius = (0.5 + softness * 4) * qualityBlur;
   } else {
     three.dir.shadow.radius = 0;
   }
@@ -4230,8 +4232,9 @@ function repSet(mesh, p, alpha = 1, src = null) {
   const py = alpha >= 1 ? p?.position?.y : repLerp(q?.position?.y, p?.position?.y, alpha);
   const pz = alpha >= 1 ? p?.position?.z : repLerp(q?.position?.z, p?.position?.z, alpha);
   const tr = alpha >= 1 ? p?.transparency : repLerp(q?.transparency, p?.transparency, alpha);
-  mesh.position.set(Number(px || 0), Number(py || 0), Number(pz || 0));
-  shadowSceneDirty = true;
+  const nextX = Number(px || 0), nextY = Number(py || 0), nextZ = Number(pz || 0);
+  const moved = mesh.position.x !== nextX || mesh.position.y !== nextY || mesh.position.z !== nextZ;
+  mesh.position.set(nextX, nextY, nextZ);
   replayPoseEuler ||= new THREE.Euler(0, 0, 0, "YXZ");
   replayPoseFrom ||= new THREE.Quaternion();
   replayPoseTo ||= new THREE.Quaternion();
@@ -4241,7 +4244,10 @@ function repSet(mesh, p, alpha = 1, src = null) {
     THREE.MathUtils.degToRad(Number(part?.orientation?.z || 0)), "YXZ"));
   setRotation(replayPoseFrom, q);
   setRotation(replayPoseTo, p);
-  mesh.quaternion.copy(replayPoseFrom.slerp(replayPoseTo, alpha));
+  replayPoseFrom.slerp(replayPoseTo, alpha);
+  const rotated = Math.abs(mesh.quaternion.dot(replayPoseFrom)) < 0.999999;
+  mesh.quaternion.copy(replayPoseFrom);
+  if ((moved || rotated) && mesh.castShadow) shadowSceneDirty = true;
   if (mesh.material) {
     const matArr = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const mat of matArr) {
@@ -4966,6 +4972,7 @@ function wireDebugMenu() {
   }
   document.getElementById("shadowRange")?.addEventListener("change", event => {
     dbg.shadowRange = event.target.value;
+    apShdwMd();
     updateShadowCoverage(performance.now(), true);
   });
   document.getElementById("sceneBrightness")?.addEventListener("input", event => {
