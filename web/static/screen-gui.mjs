@@ -10,6 +10,9 @@ function fontFamily(name) {
   const value = String(name || '').toLowerCase();
   return value.includes('sourcesans') ? 'ReplaySourceSans' : value.includes('roboto') ? 'ReplayRoboto' : value.includes('gotham') || value.includes('montserrat') ? 'ReplayMontserrat' : 'ReplayBuilderSans';
 }
+export function isRobloxTouchGui(screen) {
+  return screen?.name === 'TouchGui' && Array.isArray(screen.items) && screen.items.some(item => item.name === 'TouchControlFrame');
+}
 export class ScreenGuiView {
   constructor(container, textureUrl) {
     this.container = container;
@@ -48,6 +51,8 @@ export class ScreenGuiView {
     if (!state || !Array.isArray(state.screens)) return;
     const document = this.container.ownerDocument;
     for (const screen of state.screens.slice(0, 200)) {
+      // Older captures may include Roblox's default PlayerGui touch controls.
+      if (isRobloxTouchGui(screen)) continue;
       const root = document.createElement('div');
       root.className = 'recorded-screen-gui-screen';
       root.style.zIndex = String(Math.round(number(screen.displayOrder)));

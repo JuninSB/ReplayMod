@@ -6,7 +6,7 @@ import { buildTerrainGeometries } from "./terrain-mesh.mjs";
 import { ReplayTimeline, isPoseOnlyPatch } from "./replay-timeline.mjs?v=perf-20261109";
 import { joystickVector } from "./touch-joystick.mjs";
 import { ReplayAudio } from "./replay-audio.mjs";
-import { ScreenGuiView } from "./screen-gui.mjs";
+import { ScreenGuiView } from "./screen-gui.mjs?v=screen-gui-2";
 import { applyViewerOverrides } from "./viewer-overrides.mjs";
 import { applyMeshSizing } from "./mesh-sizing.mjs";
 import { decodeDxt1DDS, surfaceKind, surfaceRepeats, surfacePixels } from "./surface-patterns.mjs";
@@ -4412,10 +4412,30 @@ function fmtMs(ms) {
   return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
 }
 
+let replayControlsAvailable = false;
+let playbackIdleTimer = 0;
+let playbackMouseInside = false;
+let playbackLastWake = 0;
+let playbackKeyboardFocus = false;
+function revealPlaybackControls() {
+  if (!replayControlsAvailable || document.body.classList.contains("player-collapsed")) return;
+  document.body.classList.remove("player-idle");
+  clearTimeout(playbackIdleTimer);
+  playbackIdleTimer = setTimeout(() => {
+    if (!replayControlsAvailable || playbackMouseInside || replayScrubbing) return;
+    if (playbackKeyboardFocus && replayBar?.contains(document.activeElement)) return;
+    document.body.classList.add("player-idle");
+  }, 3000);
+}
 function repUi(on) {
+  replayControlsAvailable = Boolean(on);
   if (replayBar) replayBar.style.display = on ? "" : "none";
+  const showPlayer = document.getElementById("replayShowBtn");
+  if (showPlayer) showPlayer.hidden = !on || !document.body.classList.contains("player-collapsed");
   if (replayChatTitle) replayChatTitle.style.display = on ? "" : "none";
   if (replayChat) replayChat.style.display = on ? "grid" : "none";
+  if (on) revealPlaybackControls();
+  else { clearTimeout(playbackIdleTimer); document.body.classList.remove("player-idle"); }
 }
 
 function repRst() {
@@ -4752,6 +4772,8 @@ function repUiSync() {
       replaySeek.value = String(Math.floor(repMs));
       replaySeek.setAttribute('aria-valuetext', `${fmtMs(repMs)} of ${fmtMs(repDat.dur)}`);
     }
+    const progress = Math.max(0, Math.min(100, Number(replaySeek.value) / Math.max(1, repDat.dur) * 100));
+    replaySeek.style.setProperty("--playback-progress", `${progress}%`);
   }
   if (replayTime && !replayScrubbing) replayTime.textContent = `${fmtMs(repMs)} / ${fmtMs(repDat.dur)}`;
   if (replayPlayBtn) {
@@ -5727,6 +5749,56 @@ function setUiHidden(hidden) {
 }
 document.getElementById("hideUiBtn")?.addEventListener("click", () => setUiHidden(true));
 document.getElementById("showUiBtn")?.addEventListener("click", () => setUiHidden(false));
+function setPlayerCollapsed(collapsed) {
+  document.body.classList.toggle("player-collapsed", collapsed);
+  const showPlayer = document.getElementById("replayShowBtn");
+  if (showPlayer) showPlayer.hidden = !collapsed || !replayControlsAvailable;
+  const focusTarget = document.getElementById(collapsed ? "replayShowBtn" : "replayHideBtn");
+  focusTarget?.focus({ preventScroll: true });
+  if (collapsed) clearTimeout(playbackIdleTimer);
+  else revealPlaybackControls();
+}
+document.getElementById("replayHideBtn")?.addEventListener("click", () => setPlayerCollapsed(true));
+document.getElementById("replayShowBtn")?.addEventListener("click", () => setPlayerCollapsed(false));
+replayBar?.addEventListener("pointerenter", (event) => {
+  if (event.pointerType === "mouse") playbackMouseInside = true;
+  revealPlaybackControls();
+});
+replayBar?.addEventListener("pointerleave", (event) => {
+  if (event.pointerType === "mouse") playbackMouseInside = false;
+  revealPlaybackControls();
+});
+replayBar?.addEventListener("focusin", revealPlaybackControls);
+replayBar?.addEventListener("focusout", revealPlaybackControls);
+replaySeek?.addEventListener("change", revealPlaybackControls);
+window.addEventListener("pointermove", (event) => {
+  if (event.pointerType !== "mouse" || !replayControlsAvailable || document.body.classList.contains("player-collapsed")) return;
+  const rect = replayBar?.getBoundingClientRect();
+  if (!rect || event.clientY < rect.top - 48 || event.clientX < rect.left - 48 || event.clientX > rect.right + 48) return;
+  const now = performance.now();
+  if (document.body.classList.contains("player-idle") || now - playbackLastWake > 300) {
+    playbackLastWake = now;
+    revealPlaybackControls();
+  }
+});
+window.addEventListener("pointerdown", () => { playbackKeyboardFocus = false; });
+let playbackTouchStart = null;
+const playbackViewport = document.getElementById("serverViewport");
+playbackViewport?.addEventListener("pointerdown", (event) => {
+  if (event.pointerType === "touch" && event.target.tagName === "CANVAS")
+    playbackTouchStart = { id: event.pointerId, x: event.clientX, y: event.clientY, time: performance.now() };
+});
+playbackViewport?.addEventListener("pointerup", (event) => {
+  const start = playbackTouchStart;
+  playbackTouchStart = null;
+  if (start && start.id === event.pointerId && performance.now() - start.time < 500 && Math.hypot(event.clientX - start.x, event.clientY - start.y) < 10) revealPlaybackControls();
+});
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Tab") {
+    playbackKeyboardFocus = true;
+    if (replayControlsAvailable && !document.body.classList.contains("player-collapsed")) revealPlaybackControls();
+  }
+});
 document.getElementById("assetStatusBtn")?.addEventListener("click", () => {
   assetProgressDismissed = false;
   setViewerMenuOpen(false);

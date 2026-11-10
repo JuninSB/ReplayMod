@@ -31,7 +31,7 @@
         id="viewerMenuBtn"
         type="button"
         aria-expanded="false"
-        aria-controls="viewerMenu"
+        aria-controls="viewerSidebar"
       >
         Menu
       </button>
@@ -301,7 +301,7 @@
             </div>
           </div>
         </div>
-        <div id="replayBar" class="replay-bar" style="display: none">
+        <div id="replayBar" class="replay-bar" role="group" aria-label="Replay controls" style="display: none">
           <button id="replayPlayBtn" class="refresh-btn" type="button">
             Play
           </button>
@@ -328,7 +328,7 @@
             value="0"
           />
           <label class="speed-label"
-            >Playback speed<select id="replaySpeed">
+            >Speed<select id="replaySpeed">
               <option value="0.25">0.25×</option>
               <option value="0.5">0.5×</option>
               <option value="1" selected>1×</option>
@@ -337,13 +337,15 @@
             </select></label
           >
           <div id="replayTime" class="replay-time">00:00 / 00:00</div>
+          <button id="replayHideBtn" type="button" aria-label="Hide playback controls" title="Hide playback controls">Hide</button>
         </div>
+        <button id="replayShowBtn" class="replay-show-btn" type="button" aria-controls="replayBar" hidden>Show player</button>
       </section>
 
       <aside
         id="viewerSidebar"
         class="panel viewer-sidebar"
-        aria-label="Replay explorer and details"
+        aria-label="Viewer tools"
         inert
       >
         <div class="sidebar-header">

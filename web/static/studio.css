@@ -1288,3 +1288,131 @@ body.is-ui-hidden .thumb-hint { display: none !important; }
   .joystick-thumb { width: 36px; height: 36px; }
   .joystick-height button { width: 38px; height: 38px; }
 }
+
+/* Scene-first workspace and video-style transport. */
+body:not(.is-viewer) .topbar {
+  min-height: 68px;
+  padding-inline: clamp(18px, 4vw, 48px);
+  background: #11181f;
+}
+.landing-view { padding: clamp(32px, 5vw, 64px) clamp(18px, 4vw, 48px); }
+.landing-head h1 { max-width: 20ch; line-height: 1.1; }
+.landing-head p { margin-bottom: 22px; }
+.library-tabs { margin-bottom: 24px; }
+.server-cards { gap: 16px; }
+.server-card { overflow: hidden; background: #1b232c; }
+.server-card:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
+body.is-viewer .topbar { background: linear-gradient(#0c1219d9, transparent); }
+body.is-viewer #viewerMenuBtn {
+  min-height: 42px;
+  padding-inline: 16px;
+  border-color: #6a7b85;
+  background: #18222ddd;
+}
+body.is-viewer .viewer-sidebar {
+  width: min(390px, calc(100vw - 16px));
+  padding: 18px 14px 14px;
+  border-color: #53616b;
+  border-radius: 14px;
+  background: #131b23f7;
+}
+body.is-viewer .sidebar-header { min-height: 38px; padding: 0 76px 0 4px; }
+body.is-viewer .sidebar-header h2 { font-size: 18px; letter-spacing: -.02em; }
+body.is-viewer .sidebar-nav { gap: 4px; margin-top: 6px; padding: 8px 0 12px; scrollbar-width: thin; }
+body.is-viewer .sidebar-nav button { min-height: 40px; border-radius: 8px; font-weight: 600; }
+body.is-viewer .sidebar-nav button[aria-pressed="true"] { color: #baf5dc; border-color: #416b5c; background: #244038; }
+body.is-viewer .sidebar-pane { padding: 14px 2px 8px; }
+body.is-viewer #sidebarScenePane .viewer-menu { gap: 8px; }
+body.is-viewer #sidebarScenePane .viewer-menu-heading {
+  margin: 12px 0 2px;
+  color: #aebdc7;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+body.is-viewer #sidebarScenePane .viewer-menu-heading:first-child { margin-top: 0; }
+body.is-viewer #sidebarScenePane .viewer-menu button { min-height: 42px; text-align: left; padding-inline: 12px; }
+body.is-viewer #sidebarScenePane .viewer-menu button[aria-pressed="true"] { border-color: #4d8d75; color: #baf5dc; }
+body.is-viewer #sidebarRenderingPane .debug-item,
+body.is-viewer #sidebarCameraPane .debug-item { border-bottom: 1px solid #ffffff0c; padding-block: 10px; }
+body.is-viewer .replay-bar {
+  left: 50%;
+  right: auto;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  width: min(900px, calc(100% - 28px));
+  transform: translateX(-50%);
+  grid-template-columns: auto auto auto auto minmax(0, 1fr) auto auto auto;
+  grid-template-areas: "seek seek seek seek seek seek seek seek" "play back forward time spacer camera speed hide";
+  gap: 4px 8px;
+  padding: 8px 12px 12px;
+  border: 1px solid #66757d99;
+  border-radius: 14px;
+  background: #101820eb;
+  box-shadow: 0 12px 40px #0009;
+  transition: opacity .2s ease, visibility .2s ease;
+}
+body.is-viewer .replay-bar button, body.is-viewer .replay-bar select { min-height: 38px; }
+body.is-viewer #replayPlayBtn { min-width: 72px; }
+body.is-viewer #replayHideBtn { grid-area: hide; }
+body.is-viewer #replaySeek { min-width: 0; min-height: 28px; margin: 0; }
+body.is-viewer #replaySeek::-webkit-slider-runnable-track { background: linear-gradient(to right, #7ce6bd var(--playback-progress, 0%), #667781 var(--playback-progress, 0%)); }
+body.is-viewer #replaySeek::-moz-range-track { background: linear-gradient(to right, #7ce6bd var(--playback-progress, 0%), #667781 var(--playback-progress, 0%)); }
+body.is-viewer .replay-time { width: auto; min-width: 96px; text-align: left; }
+body.is-viewer .speed-label { font-size: 12px; }
+body.sidebar-open .replay-bar { right: auto; }
+body.is-viewer.player-idle .replay-bar { opacity: 0; visibility: hidden; pointer-events: none; }
+body.is-viewer.player-collapsed .replay-bar { display: none !important; }
+.replay-show-btn {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  min-height: 42px;
+  padding: 8px 16px;
+  border-color: #66757d;
+  border-radius: 999px;
+  background: #101820eb;
+  box-shadow: 0 6px 20px #0008;
+}
+.replay-show-btn:hover { transform: translateX(-50%); }
+.replay-show-btn[hidden], body.is-ui-hidden .replay-show-btn { display: none !important; }
+body.is-viewer.player-collapsed .touch-controls,
+body.is-viewer.player-idle .touch-controls,
+body.is-viewer.player-collapsed .touch-joystick,
+body.is-viewer.player-idle .touch-joystick { bottom: max(16px, env(safe-area-inset-bottom)); }
+.share-dialog { border-radius: 14px; background: #151e26; box-shadow: 0 20px 70px #000a; }
+.share-actions { margin: 18px 0; }
+.share-actions button { min-height: 42px; }
+@media (max-width: 700px) {
+  body.is-viewer .replay-bar {
+    width: calc(100% - 20px);
+    bottom: max(10px, env(safe-area-inset-bottom));
+    grid-template-columns: auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "seek seek seek seek seek" "play back forward time hide" "camera camera speed speed speed";
+    gap: 4px 6px;
+    padding: 6px 8px 8px;
+  }
+  body.is-viewer .replay-time { min-width: 0; text-align: center; font-size: 11px; }
+  body.is-viewer #replayPlayBtn { min-width: 58px; }
+  body.is-viewer .replay-bar button { padding: 6px 8px; font-size: 12px; }
+  body.is-viewer .speed-label { justify-content: flex-end; }
+  body.is-viewer .touch-controls, body.is-viewer .touch-joystick { bottom: 152px; }
+}
+@media (max-height: 540px) and (orientation: landscape) {
+  body.is-viewer .replay-bar {
+    width: min(850px, calc(100% - 16px));
+    bottom: max(8px, env(safe-area-inset-bottom));
+    grid-template-columns: auto auto auto auto minmax(0, 1fr) auto auto auto;
+    grid-template-areas: "seek seek seek seek seek seek seek seek" "play back forward time spacer camera speed hide";
+    gap: 0 5px;
+    padding: 3px 7px 6px;
+  }
+  body.is-viewer #replaySeek { min-height: 22px; }
+  body.is-viewer .replay-bar button, body.is-viewer .replay-bar select { min-height: 34px; font-size: 11px; }
+  body.is-viewer .speed-label { font-size: 0; }
+  body.is-viewer .touch-controls, body.is-viewer .touch-joystick { bottom: 82px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.is-viewer .replay-bar { transition: none; }
+}

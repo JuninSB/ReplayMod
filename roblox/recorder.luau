@@ -422,7 +422,9 @@ local function readScreenGui()
     if not playerGui then return result end
     local total = 0
     for _, screen in ipairs(playerGui:GetDescendants()) do
-        if screen:IsA("ScreenGui") and screen ~= gui and not screen:IsDescendantOf(gui) and screen.Enabled and #result.screens < 100 then
+        -- Roblox's default mobile controls live in PlayerGui, not CoreGui.
+        local isRobloxTouchControls = screen.Name == "TouchGui" and screen:FindFirstChild("TouchControlFrame") ~= nil
+        if screen:IsA("ScreenGui") and not isRobloxTouchControls and screen ~= gui and not screen:IsDescendantOf(gui) and screen.Enabled and #result.screens < 100 then
             local output = {name = screen.Name, displayOrder = screen.DisplayOrder, items = {}}
             local indexes, objects = {}, {}
             for _, object in ipairs(screen:GetDescendants()) do

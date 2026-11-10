@@ -939,3 +939,10 @@ test("offline payload compresses and restores replay data without a server", asy
   assert.deepEqual(await decodeOfflinePayload(JSON.stringify(capture), 'json'), capture);
   await assert.rejects(decodeOfflinePayload('broken', 'gzip-base64'));
 });
+
+test("default Roblox touch controls are excluded from old screen GUI captures", async () => {
+  const { isRobloxTouchGui } = await import('../web/static/screen-gui.mjs');
+  assert.equal(isRobloxTouchGui({ name: 'TouchGui', items: [{ name: 'TouchControlFrame' }] }), true);
+  assert.equal(isRobloxTouchGui({ name: 'TouchGui', items: [{ name: 'GameButton' }] }), false);
+  assert.equal(isRobloxTouchGui({ name: 'GameHUD', items: [{ name: 'TouchControlFrame' }] }), false);
+});
