@@ -4102,6 +4102,7 @@ async function loadReplays(request) {
 }
 
 function applyModeUi() {
+  if (document.body) document.body.dataset.captureMode = curMode;
   if (panelTitle) panelTitle.textContent = curMode === "rep" ? "Replay Explorer" : "Snapshot Explorer";
   if (landingTitle) landingTitle.textContent = curMode === "rep" ? "Your replays" : "Your snapshots";
   if (landingSub) {
@@ -4149,10 +4150,20 @@ function showLanding() {
   updateTopbarMode();
 }
 
+let menuLabelTimer = 0;
+function showMenuLabel() {
+  const button = document.getElementById("viewerMenuBtn");
+  if (!button) return;
+  button.classList.add("show-label");
+  clearTimeout(menuLabelTimer);
+  menuLabelTimer = setTimeout(() => button.classList.remove("show-label"), 5000);
+}
+
 function showViewer() {
   if (landingView) landingView.style.display = "none";
   if (viewerSection) viewerSection.style.display = "";
   updateTopbarMode();
+  showMenuLabel();
   requestAnimationFrame(() => onResize());
   syncThnt();
 }
@@ -4218,6 +4229,10 @@ function renderServerCards() {
       card.appendChild(img);
       card.appendChild(meta);
       card.appendChild(badge);
+      const border = document.createElement("span");
+      border.className = "card-highlight";
+      border.setAttribute("aria-hidden", "true");
+      card.appendChild(border);
       card.addEventListener("click", async () => {
         serverSelect.value = String(r.replayId || "");
         showViewer();
@@ -4256,6 +4271,10 @@ function renderServerCards() {
     meta.appendChild(sub);
     card.appendChild(img);
     card.appendChild(meta);
+    const border = document.createElement("span");
+    border.className = "card-highlight";
+    border.setAttribute("aria-hidden", "true");
+    card.appendChild(border);
     card.addEventListener("click", async () => {
       serverSelect.value = s.serverId;
       showViewer();
@@ -5240,7 +5259,12 @@ function setSidebarOpen(open) {
   document.body.classList.toggle("sidebar-open", next);
   viewerSidebar.inert = !next;
   sidebarToggleBtn.setAttribute("aria-expanded", String(next));
-  document.getElementById('viewerMenuBtn')?.setAttribute('aria-expanded', String(next));
+  const menuButton = document.getElementById("viewerMenuBtn");
+  menuButton?.setAttribute("aria-expanded", String(next));
+  menuButton?.setAttribute("aria-label", next ? "Close menu" : "Open menu");
+  const label = menuButton?.querySelector(".menu-label");
+  if (label) label.textContent = next ? "Close" : "Menu";
+  if (next !== wasOpen) showMenuLabel();
   if (next) document.querySelector('[data-sidebar-view][aria-pressed="true"]')?.focus({ preventScroll: true });
   else if (wasOpen) document.getElementById("viewerMenuBtn")?.focus({ preventScroll: true });
 }

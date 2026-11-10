@@ -1378,9 +1378,7 @@ body.is-viewer.player-collapsed .replay-bar { display: none !important; }
 .replay-show-btn:hover { transform: translateX(-50%); }
 .replay-show-btn[hidden], body.is-ui-hidden .replay-show-btn { display: none !important; }
 body.is-viewer.player-collapsed .touch-controls,
-body.is-viewer.player-idle .touch-controls,
-body.is-viewer.player-collapsed .touch-joystick,
-body.is-viewer.player-idle .touch-joystick { bottom: max(16px, env(safe-area-inset-bottom)); }
+body.is-viewer.player-collapsed .touch-joystick { bottom: max(16px, env(safe-area-inset-bottom)); }
 .share-dialog { border-radius: 14px; background: #151e26; box-shadow: 0 20px 70px #000a; }
 .share-actions { margin: 18px 0; }
 .share-actions button { min-height: 42px; }
@@ -1581,4 +1579,103 @@ body.is-viewer .replay-bar button { gap: 6px; }
   background: currentColor;
   -webkit-mask: var(--movement-icon) center / contain no-repeat;
   mask: var(--movement-icon) center / contain no-repeat;
+}
+
+/* Capture identity is carried into the library and viewer. */
+body[data-capture-mode="rep"] {
+  --mode-glow: #285643;
+  --mode-glow-soft: #193a2b;
+  --mode-panel: #10241e;
+  --mode-edge: #78ddb0;
+}
+body[data-capture-mode="snap"] {
+  --mode-glow: #344e74;
+  --mode-glow-soft: #233354;
+  --mode-panel: #162039;
+  --mode-edge: #9bbdff;
+}
+body:not(.is-viewer) {
+  background: radial-gradient(ellipse at 85% -15%, var(--mode-glow, #285643) 0, transparent 44%), #0e151a;
+  background-size: 150% 150%;
+  animation: workspace-gradient 18s ease-in-out infinite alternate;
+}
+body.is-viewer .topbar {
+  background: linear-gradient(105deg, #0c1219e8, var(--mode-panel, #10241e), #0c1219b0);
+  background-size: 200% 100%;
+  animation: workspace-gradient 16s ease-in-out infinite alternate;
+}
+body.is-viewer .replay-bar,
+body.is-viewer .viewer-sidebar {
+  background: linear-gradient(125deg, #111b20f7, var(--mode-panel, #10241e), #151c26f7);
+  background-size: 200% 200%;
+  animation: workspace-gradient 18s ease-in-out infinite alternate;
+}
+.server-card {
+  background: radial-gradient(circle at 85% 0, var(--mode-glow, #285643), transparent 50%),
+    linear-gradient(130deg, var(--mode-glow-soft, #193a2b), #15211e);
+  background-size: 180% 180%;
+  animation: library-enter .28s ease-out both, workspace-gradient 16s ease-in-out infinite alternate;
+}
+.server-card:not(:has(img[src]))::before { background: var(--mode-edge, #78ddb0); transition: background-color .2s ease, filter .2s ease; }
+.server-card:hover::before, .server-card:focus-visible::before { background: #a2ffd1; filter: drop-shadow(0 0 6px #7cf0b8); }
+@keyframes workspace-gradient { from { background-position: 0% 45%; } to { background-position: 100% 55%; } }
+
+/* Draw the moving highlight inside the rounded card edge. */
+.card-highlight {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  padding: 2px;
+  border-radius: inherit;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  transition: opacity .2s ease;
+}
+.card-highlight::before {
+  content: "";
+  position: absolute;
+  inset: -100%;
+  background: conic-gradient(from 180deg, transparent 0 64%, #68dda4 75%, #c3ffe1 80%, transparent 88%);
+}
+.server-card:focus-visible .card-highlight,
+.server-card:active .card-highlight { opacity: 1; }
+.server-card:focus-visible .card-highlight::before,
+.server-card:active .card-highlight::before { animation: card-orbit 2s linear infinite; }
+@media (hover: hover) {
+  .server-card:hover .card-highlight { opacity: 1; }
+  .server-card:hover .card-highlight::before { animation: card-orbit 2s linear infinite; }
+}
+@keyframes card-orbit { to { transform: rotate(360deg); } }
+
+/* The icon remains available while the temporary label expands and contracts. */
+body.is-viewer #viewerMenuBtn { gap: 0; }
+body.is-viewer #viewerMenuBtn .menu-label {
+  display: inline-block;
+  overflow: hidden;
+  max-width: 0;
+  margin-left: 0;
+  opacity: 0;
+  white-space: nowrap;
+  transition: max-width .25s ease, margin-left .25s ease, opacity .2s ease;
+}
+body.is-viewer #viewerMenuBtn.show-label .menu-label { max-width: 68px; margin-left: 8px; opacity: 1; }
+.touch-controls button, .joystick-height button {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+}
+.touch-controls button::before, .joystick-height button::before { display: block; }
+body.is-viewer .touch-controls, body.is-viewer .touch-joystick { transition: bottom .28s ease; }
+@media (prefers-reduced-motion: reduce) {
+  body:not(.is-viewer), body.is-viewer .topbar, body.is-viewer .replay-bar,
+  body.is-viewer .viewer-sidebar, .server-card,
+  .server-card .card-highlight::before { animation: none !important; }
+  .card-highlight, body.is-viewer #viewerMenuBtn .menu-label,
+  body.is-viewer .touch-controls, body.is-viewer .touch-joystick { transition: none; }
 }
