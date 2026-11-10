@@ -1779,3 +1779,30 @@ body.is-viewer[data-capture-mode="snap"] #sidebarScenePane .viewer-menu button[a
   border-color: #c68758; color: #ffe1c3;
 }
 body[data-capture-mode="snap"] :focus-visible { outline-color: #ffbc78; }
+body[data-capture-mode="snap"]:not(.is-viewer) {
+  background: radial-gradient(ellipse at 85% -15%, var(--mode-glow) 0, transparent 44%), #19110d;
+  background-size: 150% 150%;
+}
+body[data-capture-mode="snap"]:not(.is-viewer) .topbar { background: #1d1511f0; border-color: #513426; }
+body[data-capture-mode="snap"] .landing-head h1 { color: #fff6ed; }
+body[data-capture-mode="snap"] .landing-head p,
+body[data-capture-mode="snap"] .library-count { color: #d5bdae; }
+body[data-capture-mode="snap"] .library-search::before,
+body[data-capture-mode="snap"] .library-search input::placeholder { color: #c5a995; }
+body[data-capture-mode="snap"] .library-search input { color: #fff1e6; }
+body[data-capture-mode="snap"] .library-empty,
+body[data-capture-mode="snap"] .server-card-sub { color: #e3c6b0; }
+body[data-capture-mode="snap"] .server-card {
+  background: radial-gradient(circle at 85% 0, var(--mode-glow), transparent 50%),
+    linear-gradient(130deg, var(--mode-glow-soft), #211711);
+  background-size: 180% 180%;
+}
+body[data-capture-mode="snap"] .server-card::after { background: linear-gradient(180deg, transparent 20%, #140a07ef); }
+body[data-capture-mode="snap"] button:hover,
+body[data-capture-mode="snap"] select:hover { border-color: #ffbc78; }
+body[data-capture-mode="snap"] .property-row input[type="checkbox"] { accent-color: #ffb36b; }
+body.is-viewer[data-capture-mode="snap"] .viewer-sidebar {
+  background: linear-gradient(125deg, #241711f7, var(--mode-panel), #261911f7);
+  background-size: 200% 200%;
+}
+body[data-capture-mode="snap"] .share-dialog { background: #291b15; border-color: #8d5b39; }

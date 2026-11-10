@@ -60,3 +60,5 @@ Viewer polish: a five-second expanding Menu/Close label appears on entry and sid
 Fullscreen follow-up: removed the viewer header background while keeping its title and menu; enabled viewport-fit and added safe-area constraints for the transport, sidebar, touch controls and overlays. Renderer size now uses the actual viewport without a 320×220 minimum and updates on fullscreen and visual-viewport changes. The supplied screenshot showed the header in a normal browser view, not the reported fullscreen clipping; testing fullscreen on the physical phone remains pending.
 
 Snapshot theme follow-up: snapshots use orange for gradients, selected library tab, search accents, card borders and viewer sidebar. Replays retain their green theme. The header remains transparent as requested. Actual device color and animation inspection is still pending.
+
+Snapshot copy and color: the library tagline now follows the selected capture type, and remaining green-tinted library and viewer surfaces use warm colors in snapshot mode. Replays retain their original copy and colors.

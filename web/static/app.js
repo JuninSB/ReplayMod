@@ -4103,6 +4103,8 @@ async function loadReplays(request) {
 
 function applyModeUi() {
   if (document.body) document.body.dataset.captureMode = curMode;
+  const eyebrow = document.getElementById("landingEyebrow");
+  if (eyebrow) eyebrow.textContent = curMode === "rep" ? "RECORD · EXPLORE · REPLAY" : "CAPTURE · EXPLORE · ANALYZE";
   if (panelTitle) panelTitle.textContent = curMode === "rep" ? "Replay Explorer" : "Snapshot Explorer";
   if (landingTitle) landingTitle.textContent = curMode === "rep" ? "Your replays" : "Your snapshots";
   if (landingSub) {
