@@ -946,3 +946,42 @@ test("default Roblox touch controls are excluded from old screen GUI captures", 
   assert.equal(isRobloxTouchGui({ name: 'TouchGui', items: [{ name: 'GameButton' }] }), false);
   assert.equal(isRobloxTouchGui({ name: 'GameHUD', items: [{ name: 'TouchControlFrame' }] }), false);
 });
+
+test("library clears stale cards for empty lists and ignores late responses", async () => {
+  const source = readFileSync(path.join(__dirname, '../web/static/app.js'), 'utf8');
+  let replayRows = [{ replayId: 'r1', replayName: 'Replay' }], snapshotRows = [], delayed;
+  const context = vm.createContext({
+    curMode: 'rep', servers: [], replays: [], panelTitle: null, landingTitle: null, landingSub: null,
+    serverCards: { textContent: '' }, serverSelect: { value: '', innerHTML: '', appendChild() {} },
+    document: { createElement: () => ({}) }, addClientLog() {}, syncLibraryTabs() {},
+    fetch: async (url) => url.startsWith('/api/replays')
+      ? delayed || { ok: true, json: async () => ({ replays: replayRows }) }
+      : { ok: true, json: async () => ({ servers: snapshotRows }) },
+  });
+  context.renderServerCards = () => {
+    context.serverCards.textContent = context.curMode === 'rep'
+      ? context.replays.map(row => row.replayId).join(',') || 'No replays'
+      : context.servers.map(row => row.serverId).join(',') || 'No snapshots';
+  };
+  vm.runInContext(source.slice(source.indexOf('let libraryRequest ='), source.indexOf('function showLanding()')), context);
+  await context.loadList();
+  assert.equal(context.serverCards.textContent, 'r1');
+  context.curMode = 'snap';
+  await context.loadList();
+  assert.equal(context.serverCards.textContent, 'No snapshots');
+  snapshotRows = [{ serverId: 's1' }];
+  await context.loadList();
+  assert.equal(context.serverCards.textContent, 's1');
+  context.curMode = 'rep';
+  replayRows = [];
+  await context.loadList();
+  assert.equal(context.serverCards.textContent, 'No replays');
+  let resolve;
+  delayed = new Promise(r => { resolve = r; });
+  const pending = context.loadList();
+  context.curMode = 'snap';
+  await context.loadList();
+  resolve({ ok: true, json: async () => ({ replays: [{ replayId: 'late' }] }) });
+  assert.equal(await pending, false);
+  assert.equal(context.serverCards.textContent, 's1');
+});

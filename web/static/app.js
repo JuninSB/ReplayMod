@@ -4023,13 +4023,15 @@ function replayExplorerKey(snapshot) {
   ].join("\x02");
 }
 
-async function loadServers() {
+let libraryRequest = 0;
+async function loadServers(request) {
   addClientLog("info", "loading servers");
   const previous = serverSelect.value;
   const res = await fetch(`/api/servers?t=${Date.now()}`, { cache: "no-store" });
   if (!res.ok) throw new Error("Could not load snapshots.");
 
   const data = await res.json();
+  if (request !== libraryRequest || curMode !== "snap") return false;
   servers = data.servers || [];
 
   serverSelect.innerHTML = "";
@@ -4038,7 +4040,8 @@ async function loadServers() {
     option.value = "";
     option.textContent = "No snapshots";
     serverSelect.appendChild(option);
-    return;
+    renderServerCards();
+    return true;
   }
 
   for (const server of servers) {
@@ -4054,15 +4057,17 @@ async function loadServers() {
     serverSelect.selectedIndex = 0;
   }
   renderServerCards();
+  return true;
 }
 
-async function loadReplays() {
+async function loadReplays(request) {
   addClientLog("info", "loading replays");
   const previous = serverSelect.value;
   const res = await fetch(`/api/replays?t=${Date.now()}`, { cache: "no-store" });
   if (!res.ok) throw new Error("Could not load replays.");
 
   const data = await res.json();
+  if (request !== libraryRequest || curMode !== "rep") return false;
   replays = Array.isArray(data.replays) ? data.replays : [];
 
   serverSelect.innerHTML = "";
@@ -4071,7 +4076,8 @@ async function loadReplays() {
     option.value = "";
     option.textContent = "No replays";
     serverSelect.appendChild(option);
-    return;
+    renderServerCards();
+    return true;
   }
 
   for (const rep of replays) {
@@ -4088,6 +4094,7 @@ async function loadReplays() {
     serverSelect.selectedIndex = 0;
   }
   renderServerCards();
+  return true;
 }
 
 function applyModeUi() {
@@ -4103,13 +4110,19 @@ function applyModeUi() {
 }
 
 async function loadList() {
+  const request = ++libraryRequest;
   applyModeUi();
-  if (curMode === "rep") {
-    await loadReplays();
-  } else {
-    await loadServers();
+  if (serverCards) serverCards.textContent = "Loading captures…";
+  try {
+    const applied = curMode === "rep" ? await loadReplays(request) : await loadServers(request);
+    if (!applied) return false;
+  } catch (error) {
+    if (request !== libraryRequest) return false;
+    if (serverCards) serverCards.textContent = "Could not load captures. Try refreshing.";
+    throw error;
   }
   syncLibraryTabs();
+  return true;
 }
 
 function showLanding() {
@@ -5519,7 +5532,7 @@ if (modeSelect) {
       if (viewerSection && viewerSection.style.display !== "none") {
         showLanding();
       }
-      await loadList();
+      if (!(await loadList())) return;
       showLanding();
     } catch (error) {
       snapshotMeta.textContent = `Could not change viewer mode: ${error.message}`;
