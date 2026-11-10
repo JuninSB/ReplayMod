@@ -7,6 +7,7 @@ import { ReplayTimeline, isPoseOnlyPatch } from "./replay-timeline.mjs?v=perf-20
 import { joystickVector } from "./touch-joystick.mjs";
 import { ReplayAudio } from "./replay-audio.mjs";
 import { ScreenGuiView } from "./screen-gui.mjs?v=screen-gui-2";
+import { filterCaptures } from "./library-search.mjs";
 import { applyViewerOverrides } from "./viewer-overrides.mjs";
 import { applyMeshSizing } from "./mesh-sizing.mjs";
 import { decodeDxt1DDS, surfaceKind, surfaceRepeats, surfacePixels } from "./surface-patterns.mjs";
@@ -4024,6 +4025,7 @@ function replayExplorerKey(snapshot) {
 }
 
 let libraryRequest = 0;
+let libraryLoading = false;
 async function loadServers(request) {
   addClientLog("info", "loading servers");
   const previous = serverSelect.value;
@@ -4032,6 +4034,7 @@ async function loadServers(request) {
 
   const data = await res.json();
   if (request !== libraryRequest || curMode !== "snap") return false;
+  libraryLoading = false;
   servers = data.servers || [];
 
   serverSelect.innerHTML = "";
@@ -4068,6 +4071,7 @@ async function loadReplays(request) {
 
   const data = await res.json();
   if (request !== libraryRequest || curMode !== "rep") return false;
+  libraryLoading = false;
   replays = Array.isArray(data.replays) ? data.replays : [];
 
   serverSelect.innerHTML = "";
@@ -4111,13 +4115,17 @@ function applyModeUi() {
 
 async function loadList() {
   const request = ++libraryRequest;
+  libraryLoading = true;
   applyModeUi();
+  const count = document.getElementById("libraryCount");
+  if (count) count.textContent = "";
   if (serverCards) serverCards.textContent = "Loading captures…";
   try {
     const applied = curMode === "rep" ? await loadReplays(request) : await loadServers(request);
     if (!applied) return false;
   } catch (error) {
     if (request !== libraryRequest) return false;
+    libraryLoading = false;
     if (serverCards) serverCards.textContent = "Could not load captures. Try refreshing.";
     throw error;
   }
@@ -4152,6 +4160,18 @@ function showViewer() {
 function renderServerCards() {
   if (!serverCards) return;
   serverCards.innerHTML = "";
+  const source = curMode === "rep" ? replays : servers;
+  const query = document.getElementById("librarySearch")?.value || "";
+  const matches = filterCaptures(Array.isArray(source) ? source : [], curMode, query);
+  const count = document.getElementById("libraryCount");
+  if (count) count.textContent = `${matches.length} ${curMode === "rep" ? (matches.length === 1 ? "replay" : "replays") : (matches.length === 1 ? "snapshot" : "snapshots")}`;
+  if (query.trim() && !matches.length) {
+    const empty = document.createElement("div");
+    empty.className = "library-empty";
+    empty.textContent = "No captures match your search. Try another name or ID.";
+    serverCards.appendChild(empty);
+    return;
+  }
   if (curMode === "rep") {
     if (!Array.isArray(replays) || replays.length === 0) {
       const empty = document.createElement("div");
@@ -4160,10 +4180,10 @@ function renderServerCards() {
       serverCards.appendChild(empty);
       return;
     }
-    for (const r of replays) {
+    for (const r of matches) {
       const card = document.createElement("button");
       card.type = "button";
-      card.className = "server-card";
+      card.className = "server-card replay-card";
       const img = document.createElement("img");
       img.alt = "";
       if (r.thumbnailUrl) img.src = r.thumbnailUrl; else img.hidden = true;
@@ -4214,10 +4234,10 @@ function renderServerCards() {
     serverCards.appendChild(empty);
     return;
   }
-  for (const s of servers) {
+  for (const s of matches) {
     const card = document.createElement("button");
     card.type = "button";
-    card.className = "server-card";
+    card.className = "server-card snapshot-card";
     const img = document.createElement("img");
     img.alt = "";
     if (s.thumbnailUrl) img.src = s.thumbnailUrl; else img.hidden = true;
@@ -4791,6 +4811,7 @@ function repUiSync() {
   if (replayTime && !replayScrubbing) replayTime.textContent = `${fmtMs(repMs)} / ${fmtMs(repDat.dur)}`;
   if (replayPlayBtn) {
     replayPlayBtn.disabled = replayInitialLoading;
+    replayPlayBtn.dataset.state = repRun ? "pause" : "play";
     replayPlayBtn.textContent = replayInitialLoading ? "Loading…" : repRun ? "Pause" : "Play";
   }
 }
@@ -5762,6 +5783,9 @@ function setUiHidden(hidden) {
 }
 document.getElementById("hideUiBtn")?.addEventListener("click", () => setUiHidden(true));
 document.getElementById("showUiBtn")?.addEventListener("click", () => setUiHidden(false));
+document.getElementById("librarySearch")?.addEventListener("input", () => {
+  if (!libraryLoading) renderServerCards();
+});
 function setPlayerCollapsed(collapsed) {
   document.body.classList.toggle("player-collapsed", collapsed);
   const showPlayer = document.getElementById("replayShowBtn");

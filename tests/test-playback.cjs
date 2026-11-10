@@ -953,7 +953,7 @@ test("library clears stale cards for empty lists and ignores late responses", as
   const context = vm.createContext({
     curMode: 'rep', servers: [], replays: [], panelTitle: null, landingTitle: null, landingSub: null,
     serverCards: { textContent: '' }, serverSelect: { value: '', innerHTML: '', appendChild() {} },
-    document: { createElement: () => ({}) }, addClientLog() {}, syncLibraryTabs() {},
+    document: { createElement: () => ({}), getElementById: () => null }, addClientLog() {}, syncLibraryTabs() {},
     fetch: async (url) => url.startsWith('/api/replays')
       ? delayed || { ok: true, json: async () => ({ replays: replayRows }) }
       : { ok: true, json: async () => ({ servers: snapshotRows }) },
@@ -984,4 +984,15 @@ test("library clears stale cards for empty lists and ignores late responses", as
   resolve({ ok: true, json: async () => ({ replays: [{ replayId: 'late' }] }) });
   assert.equal(await pending, false);
   assert.equal(context.serverCards.textContent, 's1');
+});
+
+test("library search matches capture names and IDs without mixing collections", async () => {
+  const { filterCaptures } = await import('../web/static/library-search.mjs');
+  const replays = [{ replayName: 'Ação test', replayId: 'abc123', placeId: 42 }, { replayName: 'Other', replayId: 'def456' }];
+  assert.deepEqual(filterCaptures(replays, 'rep', 'acao 42'), [replays[0]]);
+  assert.deepEqual(filterCaptures(replays, 'rep', 'ABC123'), [replays[0]]);
+  assert.deepEqual(filterCaptures(replays, 'rep', 'missing'), []);
+  const snapshots = [{ snapshotName: 'Evening', serverId: 'snapshot-1' }];
+  assert.deepEqual(filterCaptures(snapshots, 'snap', 'snapshot-1'), snapshots);
+  assert.deepEqual(filterCaptures(snapshots, 'snap', '   '), snapshots);
 });

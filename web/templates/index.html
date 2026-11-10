@@ -275,6 +275,13 @@
             Snapshots
           </button>
         </nav>
+        <div class="library-tools">
+          <label class="library-search" for="librarySearch">
+            <span class="sr-only">Search captures</span>
+            <input id="librarySearch" type="search" placeholder="Search by name or ID…" autocomplete="off" />
+          </label>
+          <span id="libraryCount" class="library-count" aria-live="polite"></span>
+        </div>
       </div>
       <div id="serverCards" class="server-cards"></div>
     </section>
@@ -284,20 +291,18 @@
         <div id="serverViewport">
           <div id="screenGuiOverlay" class="recorded-screen-gui" aria-hidden="true" hidden></div>
           <div class="touch-controls" role="group" aria-label="Camera movement">
-            <button type="button" data-move="KeyW" aria-label="Forward">
-              ↑
-            </button>
-            <button type="button" data-move="KeyA" aria-label="Left">←</button>
-            <button type="button" data-move="KeyS" aria-label="Back">↓</button>
-            <button type="button" data-move="KeyD" aria-label="Right">→</button>
-            <button type="button" data-move="KeyE" aria-label="Up">＋</button>
-            <button type="button" data-move="KeyQ" aria-label="Down">−</button>
+            <button type="button" data-move="KeyW" aria-label="Forward"></button>
+            <button type="button" data-move="KeyA" aria-label="Left"></button>
+            <button type="button" data-move="KeyS" aria-label="Back"></button>
+            <button type="button" data-move="KeyD" aria-label="Right"></button>
+            <button type="button" data-move="KeyE" aria-label="Up"></button>
+            <button type="button" data-move="KeyQ" aria-label="Down"></button>
           </div>
           <div class="touch-joystick" id="touchJoystickControls" role="group" aria-label="Joystick camera movement" hidden>
             <div id="touchJoystick" class="joystick-base" role="application" aria-label="Move camera with joystick"><div id="joystickThumb" class="joystick-thumb"></div></div>
             <div class="joystick-height">
-              <button type="button" data-move="KeyE" aria-label="Up">＋</button>
-              <button type="button" data-move="KeyQ" aria-label="Down">−</button>
+              <button type="button" data-move="KeyE" aria-label="Up"></button>
+              <button type="button" data-move="KeyQ" aria-label="Down"></button>
             </div>
           </div>
         </div>

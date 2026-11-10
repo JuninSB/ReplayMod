@@ -11,5 +11,6 @@ This repository derives from [JuninSB/Webview](https://github.com/JuninSB/Webvie
 - TypeScript: Apache-2.0.
 - Prettier: MIT.
 - `@types/node` and `undici-types`: MIT; development type packages.
+- Lucide icons (`lucide-static` 1.70.0): ISC, with MIT terms for icons derived from Feather. The complete notice is in [lucide-license.txt](web/static/lucide-license.txt); selected icons are embedded in the viewer stylesheet for offline use.
 
 The exact versions are recorded in `package-lock.json`. Each dependency retains its upstream license. No Roblox client cache, downloaded Roblox asset, or replay capture is included in this repository; Roblox assets fetched by users remain subject to Roblox's terms and access permissions.
