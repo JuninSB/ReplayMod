@@ -1589,10 +1589,12 @@ body[data-capture-mode="rep"] {
   --mode-edge: #78ddb0;
 }
 body[data-capture-mode="snap"] {
-  --mode-glow: #344e74;
-  --mode-glow-soft: #233354;
-  --mode-panel: #162039;
-  --mode-edge: #9bbdff;
+  --mode-glow: #773e19;
+  --mode-glow-soft: #492616;
+  --mode-panel: #301b13;
+  --mode-edge: #ffbc78;
+  --accent: #ffb36b;
+  --accent-2: #d97936;
 }
 body:not(.is-viewer) {
   background: radial-gradient(ellipse at 85% -15%, var(--mode-glow, #285643) 0, transparent 44%), #0e151a;
@@ -1750,3 +1752,30 @@ body.is-viewer .asset-progress {
   body.is-viewer.player-collapsed .touch-controls,
   body.is-viewer.player-collapsed .touch-joystick { bottom: max(16px, env(safe-area-inset-bottom, 0px)); }
 }
+
+/* Snapshot mode uses a warm accent across the library and viewer. */
+body[data-capture-mode="snap"] .brand-accent,
+body[data-capture-mode="snap"] .eyebrow { color: #ffc084; }
+body[data-capture-mode="snap"] .library-tabs { background: #281c17; border-color: #65402d; }
+body[data-capture-mode="snap"] .library-tabs button { color: #d1b8a5; }
+body[data-capture-mode="snap"] .library-tabs button[aria-pressed="true"] {
+  background: #6a371b; border-color: #c47d46; color: #fff1e3;
+}
+body[data-capture-mode="snap"] .library-search input { background: #281c17; border-color: #65402d; }
+body[data-capture-mode="snap"] .library-search:focus-within input { border-color: #ffbc78; }
+body[data-capture-mode="snap"] .library-empty { background: #281c17; border-color: #8b5839; }
+body[data-capture-mode="snap"] .server-card { border-color: #75503b; }
+body[data-capture-mode="snap"] .server-card:hover { border-color: #ffbc78; }
+body[data-capture-mode="snap"] .server-card:hover::before,
+body[data-capture-mode="snap"] .server-card:focus-visible::before { background: #ffcb95; filter: drop-shadow(0 0 6px #f5a157); }
+body[data-capture-mode="snap"] .card-highlight::before {
+  background: conic-gradient(from 180deg, transparent 0 64%, #f0954f 75%, #ffe0ba 80%, transparent 88%);
+}
+body.is-viewer[data-capture-mode="snap"] .viewer-sidebar { border-color: #9a6441; }
+body.is-viewer[data-capture-mode="snap"] .sidebar-nav button[aria-pressed="true"] {
+  background: #683a22; border-color: #c68758; color: #fff1e3;
+}
+body.is-viewer[data-capture-mode="snap"] #sidebarScenePane .viewer-menu button[aria-pressed="true"] {
+  border-color: #c68758; color: #ffe1c3;
+}
+body[data-capture-mode="snap"] :focus-visible { outline-color: #ffbc78; }
