@@ -5133,8 +5133,8 @@ async function loadSnapshot() {
 function onResize() {
   screenGuiView.resize();
   if (!three) return;
-  const w = Math.max(320, viewport.clientWidth);
-  const h = Math.max(220, viewport.clientHeight);
+  const w = Math.max(1, viewport.clientWidth);
+  const h = Math.max(1, viewport.clientHeight);
   const ratio = scenePixelRatio(w);
   if (three.renderer.getPixelRatio() !== ratio) {
     three.renderer.setPixelRatio(ratio);
@@ -5586,6 +5586,7 @@ if (modeSelect) {
   });
 }
 window.addEventListener("resize", onResize);
+window.visualViewport?.addEventListener("resize", onResize);
 window.addEventListener("keydown", (event) => {
   const tag = String(document.activeElement?.tagName || "").toLowerCase();
   if (tag === "input" || tag === "textarea" || tag === "select") return;
@@ -5779,7 +5780,10 @@ if (fullscreenBtn) {
       addClientLog("warn", "fullscreen toggle failed", { message: error?.message || String(error) });
     }
   });
-  document.addEventListener("fullscreenchange", syncFullscreenBtn);
+  document.addEventListener("fullscreenchange", () => {
+    syncFullscreenBtn();
+    requestAnimationFrame(onResize);
+  });
   syncFullscreenBtn();
 }
 

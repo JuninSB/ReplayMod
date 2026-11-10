@@ -1679,3 +1679,74 @@ body.is-viewer .touch-controls, body.is-viewer .touch-joystick { transition: bot
   .card-highlight, body.is-viewer #viewerMenuBtn .menu-label,
   body.is-viewer .touch-controls, body.is-viewer .touch-joystick { transition: none; }
 }
+
+/* Keep the scene unobstructed and controls inside display cutouts in fullscreen. */
+body.is-viewer {
+  --viewer-safe-left: max(12px, env(safe-area-inset-left, 0px));
+  --viewer-safe-right: max(12px, env(safe-area-inset-right, 0px));
+}
+body.is-viewer .topbar {
+  background: transparent;
+  animation: none;
+  padding: max(6px, env(safe-area-inset-top, 0px)) var(--viewer-safe-right) 6px var(--viewer-safe-left);
+}
+body.is-viewer .brand, body.is-viewer .viewer-context { text-shadow: 0 1px 5px #000c; }
+body.is-viewer .viewer-context { min-width: 0; }
+body.is-viewer .viewer-sidebar {
+  top: max(8px, env(safe-area-inset-top, 0px));
+  right: var(--viewer-safe-right);
+  bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  width: min(390px, calc(100vw - var(--viewer-safe-left) - var(--viewer-safe-right)));
+  transform: translateX(calc(100% + var(--viewer-safe-right) + 24px));
+}
+body.is-viewer.sidebar-open .viewer-sidebar { transform: translateX(0); }
+body.is-viewer .replay-bar, body.sidebar-open .replay-bar {
+  left: var(--viewer-safe-left);
+  right: var(--viewer-safe-right);
+  width: auto;
+  max-width: 900px;
+  margin-inline: auto;
+  transform: none;
+}
+body.is-viewer .replay-show-btn {
+  left: var(--viewer-safe-left);
+  right: var(--viewer-safe-right);
+  width: max-content;
+  max-width: calc(100% - var(--viewer-safe-left) - var(--viewer-safe-right));
+  margin-inline: auto;
+  transform: none;
+}
+body.is-viewer .replay-show-btn:hover { transform: none; }
+body.is-viewer .touch-controls, body.is-viewer .touch-joystick { left: var(--viewer-safe-left); }
+body.is-viewer .share-dialog {
+  max-width: calc(100vw - var(--viewer-safe-left) - var(--viewer-safe-right));
+  max-height: calc(100dvh - max(8px, env(safe-area-inset-top, 0px)) - max(8px, env(safe-area-inset-bottom, 0px)));
+}
+body.is-viewer .thumb-hint {
+  left: var(--viewer-safe-left);
+  right: var(--viewer-safe-right);
+  width: auto;
+  max-width: 600px;
+  margin-inline: auto;
+  bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  transform: none;
+}
+body.is-viewer #fpsOverlay { left: var(--viewer-safe-left) !important; top: max(54px, calc(env(safe-area-inset-top, 0px) + 48px)) !important; }
+body.is-viewer .asset-progress {
+  left: var(--viewer-safe-left);
+  right: var(--viewer-safe-right);
+  top: max(54px, calc(env(safe-area-inset-top, 0px) + 48px));
+  width: min(340px, calc(100% - var(--viewer-safe-left) - var(--viewer-safe-right)));
+  max-height: max(40px, min(260px, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 72px)));
+  margin-inline: auto;
+  transform: none;
+}
+@media (max-width: 600px) and (max-height: 540px) and (orientation: landscape) {
+  body.is-viewer .replay-bar {
+    grid-template-columns: auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "seek seek seek seek seek" "play back forward time hide" "camera camera speed speed speed";
+  }
+  body.is-viewer .touch-controls, body.is-viewer .touch-joystick { bottom: 122px; }
+  body.is-viewer.player-collapsed .touch-controls,
+  body.is-viewer.player-collapsed .touch-joystick { bottom: max(16px, env(safe-area-inset-bottom, 0px)); }
+}

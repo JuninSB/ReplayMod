@@ -996,3 +996,19 @@ test("library search matches capture names and IDs without mixing collections", 
   assert.deepEqual(filterCaptures(snapshots, 'snap', 'snapshot-1'), snapshots);
   assert.deepEqual(filterCaptures(snapshots, 'snap', '   '), snapshots);
 });
+
+test("viewer resizes the renderer to the actual viewport even when it is small", () => {
+  const source = readFileSync(path.join(__dirname, '../web/static/app.js'), 'utf8');
+  const sizes = [];
+  const camera = { updateProjectionMatrix() {} };
+  const context = vm.createContext({
+    viewport: { clientWidth: 240, clientHeight: 160 },
+    screenGuiView: { resize() {} },
+    scenePixelRatio: () => 1,
+    three: { camera, renderer: { getPixelRatio: () => 1, setSize: (w, h) => sizes.push([w, h]) } },
+  });
+  vm.runInContext(source.slice(source.indexOf('function onResize()'), source.indexOf('async function bootstrap()')), context);
+  context.onResize();
+  assert.deepEqual(sizes, [[240, 160]]);
+  assert.equal(camera.aspect, 1.5);
+});
